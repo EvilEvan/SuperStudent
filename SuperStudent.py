@@ -287,6 +287,7 @@ def level_menu():
     num_rect = pygame.Rect((WIDTH // 2 + 20, HEIGHT // 2 - button_height - 10), (button_width, button_height))
     shapes_rect = pygame.Rect((WIDTH // 2 - button_width - 20, HEIGHT // 2 + 10), (button_width, button_height))
     clcase_rect = pygame.Rect((WIDTH // 2 + 20, HEIGHT // 2 + 10), (button_width, button_height))
+    colors_rect = pygame.Rect((WIDTH // 2 - 150, HEIGHT // 2 + 120), (300, 80))  # Add a new Colors button
 
     # Set up smooth color transition variables for the title
     color_transition = 0.0
@@ -339,6 +340,8 @@ def level_menu():
                     return "shapes"
                 elif clcase_rect.collidepoint(mx, my):
                     return "clcase"
+                elif colors_rect.collidepoint(mx, my):  # Handle Colors button click
+                    return "colors"
 
         # Draw the outward moving particles
         for particle in repel_particles:
@@ -404,6 +407,12 @@ def level_menu():
         clcase_text_rect = clcase_text.get_rect(center=clcase_rect.center)
         screen.blit(clcase_text, clcase_text_rect)
 
+        # Draw the new Colors button with a neon rainbow look
+        draw_neon_button(colors_rect, (128, 0, 255))
+        colors_text = small_font.render("Colors", True, WHITE)
+        colors_text_rect = colors_text.get_rect(center=colors_rect.center)
+        screen.blit(colors_text, colors_text_rect)
+
         pygame.display.flip()
         clock.tick(60)
 
@@ -412,7 +421,7 @@ def level_menu():
 ###############################################################################
 
 def game_loop(mode):
-    global shake_duration, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer
+    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer
 
     # Initialize swirling particles
     create_swirl_particles(WIDTH // 2, HEIGHT // 2)
@@ -431,7 +440,6 @@ def game_loop(mode):
     convergence_target = None
     convergence_timer = 0
 
-
     # Add a flag to prevent checkpoint screen after level completion
     just_completed_level = False
 
@@ -448,6 +456,8 @@ def game_loop(mode):
         sequence = ["Rectangle", "Square", "Circle", "Triangle", "Pentagon"]
     elif mode == "clcase":  # New C/L Case letters mode
         sequence = list("abcdefghijklmnopqrstuvwxyz")
+    elif mode == "colors":  # New Colors mode
+        sequence = []  # Colors mode doesn't use sequence logic
     else:
         sequence = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") # Default or fallback
 
@@ -456,19 +466,20 @@ def game_loop(mode):
 
     # Initialize game variables
     current_group_index = 0
-    if not groups: # Handle case where sequence is empty or too short
+    if not groups and mode != "colors": # Handle case where sequence is empty or too short
         print("Error: No groups generated for the selected mode.")
         return False # Or handle appropriately
 
-    current_group = groups[current_group_index]
+    current_group = groups[current_group_index] if mode != "colors" else []
     # For consistency, use target_letter to represent the target even in shapes mode.
     letters_to_target = current_group.copy()
-    if not letters_to_target:
+    if not letters_to_target and mode != "colors":
         print("Error: Current group is empty.")
         return False # Or handle appropriately
-    target_letter = letters_to_target[0]
+    target_letter = letters_to_target[0] if mode != "colors" else None
     TOTAL_LETTERS = len(sequence)
     total_destroyed = 0 # Tracks overall destroyed across all groups
+    overall_destroyed = 0  # <-- Initialize here to avoid UnboundLocalError
     running = True
 
     clock = pygame.time.Clock()
@@ -504,6 +515,159 @@ def game_loop(mode):
 
     letters_to_spawn = current_group.copy()
     frame_count = 0
+
+    # --- COLORS LEVEL SPECIAL LOGIC ---
+    if mode == "colors":
+        # --- Setup ---
+        COLORS_LIST = [
+            (0, 0, 255),    # Blue
+            (255, 0, 0),    # Red
+            (0, 200, 0),    # Green
+            (255, 255, 0),  # Yellow
+            (128, 0, 255),  # Purple
+            (0, 0, 0),      # Black
+        ]
+        color_names = ["Blue", "Red", "Green", "Yellow", "Purple", "Black"]
+        mother_color_idx = random.randint(0, 5)
+        mother_color = COLORS_LIST[mother_color_idx]
+        mother_color_name = color_names[mother_color_idx]
+        center = (WIDTH // 2, HEIGHT // 2)
+        mother_radius = 180
+        vibration_frames = 30
+        disperse_frames = 30
+        running = True
+        clock = pygame.time.Clock()
+        score = 0
+        target_dots_left = 25
+        dots = []
+        dots_active = False
+        frame = 0
+        overall_destroyed = 0  # <-- Already initialized above, but safe to re-initialize here
+        # --- Mother Dot Vibration ---
+        for vib in range(vibration_frames):
+            screen.fill(WHITE)
+            vib_x = center[0] + random.randint(-6, 6)
+            vib_y = center[1] + random.randint(-6, 6)
+            pygame.draw.circle(screen, mother_color, (vib_x, vib_y), mother_radius)
+            # Draw label
+            label = small_font.render("Remember this color!", True, BLACK)
+            label_rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 60))
+            screen.blit(label, label_rect)
+            pygame.display.flip()
+            clock.tick(60)
+        # --- Mother Dot Disperse Animation ---
+        disperse_particles = []
+        for i in range(100):
+            angle = random.uniform(0, 2 * math.pi)
+            disperse_particles.append({
+                "angle": angle,
+                "radius": 0,
+                "speed": random.uniform(12, 18),
+                "color": mother_color if i < 25 else None,  # Will assign distractor colors below
+            })
+        # Assign distractor colors
+        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != mother_color_idx]
+        color_counts = [0] * 5
+        for i in range(25, 100):
+            color_idx = (i - 25) // 15
+            disperse_particles[i]["color"] = distractor_colors[color_idx]
+            color_counts[color_idx] += 1
+        for t in range(disperse_frames):
+            screen.fill(WHITE)
+            for p in disperse_particles:
+                p["radius"] += p["speed"]
+                x = int(center[0] + math.cos(p["angle"]) * p["radius"])
+                y = int(center[1] + math.sin(p["angle"]) * p["radius"])
+                pygame.draw.circle(screen, p["color"], (x, y), 22)
+            pygame.display.flip()
+            clock.tick(60)
+        # --- Initialize Bouncing Dots ---
+        dots = []
+        for i, p in enumerate(disperse_particles):
+            x = int(center[0] + math.cos(p["angle"]) * p["radius"])
+            y = int(center[1] + math.sin(p["angle"]) * p["radius"])
+            dx = random.uniform(-6, 6)
+            dy = random.uniform(-6, 6)
+            dots.append({
+                "x": x, "y": y,
+                "dx": dx, "dy": dy,
+                "color": p["color"],
+                "radius": 22,
+                "target": True if p["color"] == mother_color else False,
+                "alive": True,
+            })
+        dots_active = True
+        # --- Main Colors Level Loop ---
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    break
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    running = False
+                    break
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mx, my = pygame.mouse.get_pos()
+                    for dot in dots:
+                        if dot["alive"]:
+                            dist = math.hypot(mx - dot["x"], my - dot["y"])
+                            if dist <= dot["radius"]:
+                                if dot["target"]:
+                                    dot["alive"] = False
+                                    target_dots_left -= 1
+                                    score += 10
+                                    overall_destroyed += 1  # <-- Increment destroyed count
+                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=20)
+                                # No effect for distractors
+                                break
+            # --- Update Dots ---
+            for dot in dots:
+                if not dot["alive"]:
+                    continue
+                dot["x"] += dot["dx"]
+                dot["y"] += dot["dy"]
+                # Bounce off walls
+                if dot["x"] - dot["radius"] < 0:
+                    dot["x"] = dot["radius"]
+                    dot["dx"] *= -1
+                if dot["x"] + dot["radius"] > WIDTH:
+                    dot["x"] = WIDTH - dot["radius"]
+                    dot["dx"] *= -1
+                if dot["y"] - dot["radius"] < 0:
+                    dot["y"] = dot["radius"]
+                    dot["dy"] *= -1
+                if dot["y"] + dot["radius"] > HEIGHT:
+                    dot["y"] = HEIGHT - dot["radius"]
+                    dot["dy"] *= -1
+            # --- Draw ---
+            screen.fill(WHITE)
+            # Draw all alive dots
+            for dot in dots:
+                if dot["alive"]:
+                    pygame.draw.circle(screen, dot["color"], (int(dot["x"]), int(dot["y"])), dot["radius"])
+            # Draw explosions
+            for explosion in explosions[:]:
+                if explosion["duration"] > 0:
+                    draw_explosion(explosion)
+                    explosion["duration"] -= 1
+                else:
+                    explosions.remove(explosion)
+            # HUD
+            info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, BLACK)
+            screen.blit(info, (20, 20))
+            # Show a sample target dot at top right
+            pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 22)
+            pygame.draw.rect(screen, BLACK, (WIDTH - 90, 30, 60, 60), 2)
+            # --- Add this: call display_info for consistency with other modes ---
+            display_info(score, "color", mother_color_name, overall_destroyed, 25, "colors")
+            pygame.display.flip()
+            clock.tick(60)
+            # End condition
+            if target_dots_left <= 0:
+                pygame.time.delay(500)
+                well_done_screen(score)
+                return True
+        return False
 
     # --- Main Game Loop ---
     while running:
@@ -1069,7 +1233,8 @@ def game_loop(mode):
                 particles.remove(particle)
 
         # --- Display HUD Info ---
-        display_info(score, current_ability, target_letter, total_destroyed + letters_destroyed, TOTAL_LETTERS, mode) # Pass mode
+        if mode != "colors":
+            display_info(score, current_ability, target_letter, overall_destroyed + letters_destroyed, TOTAL_LETTERS, mode) # Pass mode
 
         # --- Player Trail Effect (less relevant if player doesn't move) ---
         # if game_started:

@@ -23,6 +23,37 @@ Neglected notes
 - All shapes in "shapes" mode are now drawn as outlines (no color fill), both for the center target and falling items.  
 - Reason: Ensures visual distinction between rectangle and square, and matches prompt requirement for border-only display.
 
+**Model: gpt-4o | Date: 2024-06-12 | Logic:**  
+- Fixed UnboundLocalError for `shake_magnitude` in `game_loop` by declaring it as global.  
+- Reason: Ensures the function uses the intended global variable for screen shake magnitude.
+
+**Model: gpt-4o | Date: 2024-06-13 | Logic:**  
+- Added "Colors" level: introduces a central "Mother Dot" of random color (Blue, Red, Green, Yellow, Purple, Black) that vibrates, then disperses into 100 bouncing dots (25 targets, 75 distractors).
+- Only dots matching the Mother Dot color can be clicked and destroyed; distractors are unaffected by clicks.
+- Level ends when all 25 target dots are destroyed.
+- Reason: Implements a color-matching challenge with animated transitions and clear visual feedback, as per prompt requirements.
+
+**Model: gpt-4o | Date: 2024-06-13 | Logic:**  
+- Fixed UnboundLocalError in "colors" mode by removing local assignment of `WIDTH, HEIGHT` (which shadowed the global variables). Now all drawing and logic use the global screen dimensions, preventing runtime errors and ensuring consistent behavior across all modes.
+
+**Model: gpt-4o | Date: 2024-06-13 | Logic:**  
+- Fixed UnboundLocalError for `overall_destroyed` in "colors" mode by initializing and incrementing `overall_destroyed` as target dots are destroyed, and passing it to `display_info`. This ensures the HUD and progress tracking work without runtime errors.
+
+**Model: gpt-4o | Date: 2024-06-13 | Logic:**  
+- Clarified and fixed repeated UnboundLocalError for `overall_destroyed` in "colors" mode.  
+- Context: The main game loop after the "colors" block still called `display_info` with `overall_destroyed`, which is not defined in that scope for "colors" mode.  
+- Fix: Now, `display_info` is only called in the main loop if not in "colors" mode, since "colors" mode handles its own HUD and progress display. This prevents undefined variable errors and avoids double HUD rendering.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Fixed UnboundLocalError for `overall_destroyed` in the main game loop after "colors" mode.  
+- Context: The main game loop called `display_info` with `overall_destroyed`, which was not defined in "colors" mode, causing a runtime error.  
+- Fix: Now, `display_info` is only called in the main loop if not in "colors" mode, since "colors" mode handles its own HUD and progress display. This prevents undefined variable errors and avoids double HUD rendering.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Fixed repeated UnboundLocalError for `overall_destroyed` in the main game loop after "colors" mode.  
+- Context: The main game loop called `display_info` with `overall_destroyed`, which was not defined in "colors" mode, causing a runtime error.  
+- Fix: Now, `display_info` is only called in the main loop if not in "colors" mode, since "colors" mode handles its own HUD and progress display. This prevents undefined variable errors and avoids double HUD rendering.
+
 # Notes
 
 - Centre‑display logic now prioritizes `mode == "clcase"` before any alpha substitution.  
