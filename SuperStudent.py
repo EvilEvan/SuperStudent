@@ -719,26 +719,29 @@ def game_loop(mode):
             value = target_letter
             size = 500  # adjust size as needed for display
             pos = (player_x + offset_x, player_y + offset_y)
-            rect = pygame.Rect(pos[0] - size//2, pos[1] - size//2, size, size)
             outline_color = BLACK # Use black outline for shapes
-            if value in ["Rectangle", "Square"]:
-                pygame.draw.rect(screen, outline_color, rect, 5)
+            rect = pygame.Rect(pos[0] - int(size*1.5)//2, pos[1] - size//2, int(size*1.5), size)
+            if value == "Rectangle":
+                pygame.draw.rect(screen, outline_color, rect, 8)  # Border only, 1.5:1 aspect
+            elif value == "Square":
+                square_rect = pygame.Rect(pos[0] - size//2, pos[1] - size//2, size, size)
+                pygame.draw.rect(screen, outline_color, square_rect, 8)  # Border only
             elif value == "Circle":
-                pygame.draw.circle(screen, outline_color, pos, size//2, 5)
+                pygame.draw.circle(screen, outline_color, pos, size//2, 8)  # Border only
             elif value == "Triangle":
                 points = [
                     (pos[0], pos[1] - size//2),
                     (pos[0] - size//2, pos[1] + size//2),
                     (pos[0] + size//2, pos[1] + size//2)
                 ]
-                pygame.draw.polygon(screen, outline_color, points, 5)
+                pygame.draw.polygon(screen, outline_color, points, 8)  # Border only
             elif value == "Pentagon":
                 points = []
                 r_size = size // 2
                 for i in range(5):
                     angle = math.radians(72 * i - 90)
                     points.append((pos[0] + r_size * math.cos(angle), pos[1] + r_size * math.sin(angle)))
-                pygame.draw.polygon(screen, outline_color, points, 5)
+                pygame.draw.polygon(screen, outline_color, points, 8)  # Border only
         else:  # Alphabet, Numbers, C/L Case
             player_font = pygame.font.Font(None, 900)
             display_char = target_letter  # default
@@ -798,22 +801,29 @@ def game_loop(mode):
 
             if mode == "shapes":
                 value = letter_obj["value"]
-                color = BLACK # always draw falling shapes as solid BLACK
+                color = BLACK # always draw falling shapes as solid BLACK border
                 size = letter_obj["size"]
                 pos = (draw_pos_x, draw_pos_y)
-                rect = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
-                letter_obj["rect"] = rect # Update rect for collision detection
-                if value in ["Rectangle", "Square"]:
-                    pygame.draw.rect(screen, color, rect)
+                if value == "Rectangle":
+                    rect = pygame.Rect(pos[0] - int(size*1.5)//2, pos[1] - size//2, int(size*1.5), size)
+                    letter_obj["rect"] = rect
+                    pygame.draw.rect(screen, color, rect, 6)  # Border only, 1.5:1 aspect
+                elif value == "Square":
+                    rect = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
+                    letter_obj["rect"] = rect
+                    pygame.draw.rect(screen, color, rect, 6)  # Border only
                 elif value == "Circle":
-                    pygame.draw.circle(screen, color, pos, size//2)
+                    rect = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
+                    letter_obj["rect"] = rect
+                    pygame.draw.circle(screen, color, pos, size//2, 6)  # Border only
                 elif value == "Triangle":
                     points = [
                         (pos[0], pos[1] - size//2),
                         (pos[0] - size//2, pos[1] + size//2),
                         (pos[0] + size//2, pos[1] + size//2)
                     ]
-                    pygame.draw.polygon(screen, color, points)
+                    letter_obj["rect"] = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
+                    pygame.draw.polygon(screen, color, points, 6)  # Border only
                 elif value == "Pentagon":
                     cx, cy = pos
                     r = size // 2
@@ -821,7 +831,8 @@ def game_loop(mode):
                     for i in range(5):
                         angle = math.radians(72 * i - 90)
                         points.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
-                    pygame.draw.polygon(screen, color, points)
+                    letter_obj["rect"] = pygame.Rect(cx-r, cy-r, size, size)
+                    pygame.draw.polygon(screen, color, points, 6)  # Border only
             else: # Alphabet, Numbers, C/L Case
                 display_value = letter_obj["value"] # Default character to display
 
