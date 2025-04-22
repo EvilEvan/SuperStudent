@@ -84,12 +84,9 @@ convergence_timer = 0
 ###############################################################################
 
 def welcome_screen():
-    """Show a flashing welcome screen with gravitational particle effect."""
-    flash = True
-    flash_count = 0
-    running = True
-    clock = pygame.time.Clock()
-
+    """Show a static welcome screen (image only, no animation)."""
+    # --- Draw everything ONCE to a surface ---
+    static_surface = pygame.Surface((WIDTH, HEIGHT))
     # Vivid bright colors for particles
     particle_colors = [
         (255, 0, 128),   # Bright pink
@@ -98,10 +95,9 @@ def welcome_screen():
         (255, 128, 0),   # Bright orange
         (0, 128, 255)    # Bright blue
     ]
-
-    # Create gravitational particles
+    # Draw static gravitational particles (random positions)
     grav_particles = []
-    for _ in range(200):
+    for _ in range(120):
         angle = random.uniform(0, math.pi * 2)
         distance = random.uniform(200, max(WIDTH, HEIGHT))
         x = WIDTH // 2 + math.cos(angle) * distance
@@ -111,18 +107,80 @@ def welcome_screen():
             "y": y,
             "color": random.choice(particle_colors),
             "size": random.randint(13, 17),
-            "speed": random.uniform(0.5, 2.0)
         })
-
-    # For pulsing yellow text effect
-    sangsom_color_pulse = 0
-
-    color_transition = 0.0
-    current_color = FLAME_COLORS[0]
-    next_color = FLAME_COLORS[1]
-
+    static_surface.fill(BLACK)
+    for particle in grav_particles:
+        pygame.draw.circle(static_surface, particle["color"],
+                           (int(particle["x"]), int(particle["y"])),
+                           particle["size"])
+    # Smooth color transition for title (pick a random color)
+    current_color = random.choice(FLAME_COLORS)
+    next_color = random.choice(FLAME_COLORS)
+    r = int(current_color[0] * 0.5 + next_color[0] * 0.5)
+    g = int(current_color[1] * 0.5 + next_color[1] * 0.5)
+    b = int(current_color[2] * 0.5 + next_color[2] * 0.5)
+    title_color = (r, g, b)
+    # Draw title with depth/glow effect (single frame)
+    title_text = "Super Student"
+    title_rect_center = (WIDTH // 2, HEIGHT // 2)
+    shadow_color = (20, 20, 20)
+    for depth in range(1, 0, -1):
+        shadow = TITLE_FONT.render(title_text, True, shadow_color)
+        shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
+        static_surface.blit(shadow, shadow_rect)
+    glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
+    for i, glow_color in enumerate(glow_colors):
+        glow = TITLE_FONT.render(title_text, True, glow_color)
+        offset = i + 1
+        for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
+            glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
+            static_surface.blit(glow, glow_rect)
+    highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
+    shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
+    mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
+    highlight = TITLE_FONT.render(title_text, True, highlight_color)
+    highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
+    static_surface.blit(highlight, highlight_rect)
+    mid_tone = TITLE_FONT.render(title_text, True, mid_color)
+    mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
+    static_surface.blit(mid_tone, mid_rect)
+    inner_shadow = TITLE_FONT.render(title_text, True, shadow_color)
+    inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
+    static_surface.blit(inner_shadow, inner_shadow_rect)
+    title = TITLE_FONT.render(title_text, True, title_color)
+    title_rect = title.get_rect(center=title_rect_center)
+    static_surface.blit(title, title_rect)
+    # Instructions
+    instructions = small_font.render("Click to start!", True, (255, 0, 0))
+    instruction_rect = instructions.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 200))
+    static_surface.blit(instructions, instruction_rect)
+    # Pulsing SANGSOM text effect (pick a static pulse)
+    pulse_factor = 0.5
+    bright_yellow = (255, 255, 0)
+    lite_yellow = (255, 255, 150)
+    sangsom_color = tuple(int(bright_yellow[i] * (1 - pulse_factor) + lite_yellow[i] * pulse_factor) for i in range(3))
+    collab_font = pygame.font.Font(None, 100)
+    collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
+    collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
+    collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
+    collab_rect1 = collab_text1.get_rect()
+    collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
+    collab_rect1.centery = HEIGHT // 2 + 350
+    collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 350))
+    collab_rect3 = collab_text3.get_rect()
+    collab_rect3.left = collab_rect2.right
+    collab_rect3.centery = HEIGHT // 2 + 350
+    static_surface.blit(collab_text1, collab_rect1)
+    static_surface.blit(collab_text2, collab_rect2)
+    static_surface.blit(collab_text3, collab_rect3)
+    creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
+    creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40))
+    static_surface.blit(creator_text, creator_rect)
+    # --- Show the static image until click/quit ---
+    running = True
     while running:
-        screen.fill(BLACK)
+        screen.blit(static_surface, (0, 0))
+        pygame.display.flip()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -132,138 +190,6 @@ def welcome_screen():
                 exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
                 running = False
-
-        # Draw the gravitational particles
-        for particle in grav_particles:
-            # Calculate direction to center
-            dx = WIDTH // 2 - particle["x"]
-            dy = HEIGHT // 2 - particle["y"]
-            # Normalize and apply speed
-            distance = max(1, math.hypot(dx, dy))
-            particle["x"] += dx / distance * particle["speed"]
-            particle["y"] += dy / distance * particle["speed"]
-
-            # If particle gets too close to center, reset it at the edges
-            if distance < 50:
-                angle = random.uniform(0, math.pi * 2)
-                far_distance = random.uniform(300, max(WIDTH, HEIGHT))
-                particle["x"] = WIDTH // 2 + math.cos(angle) * far_distance
-                particle["y"] = HEIGHT // 2 + math.sin(angle) * far_distance
-                particle["color"] = random.choice(particle_colors)
-                particle["size"] = random.randint(13, 17)
-
-            # Draw the particle
-            pygame.draw.circle(screen, particle["color"],
-                               (int(particle["x"]), int(particle["y"])),
-                               particle["size"])
-
-        # Update smooth color transition (faster)
-        color_transition += 0.05
-        if color_transition >= 1:
-            color_transition = 0
-            current_color = next_color
-            next_color = random.choice(FLAME_COLORS)
-        r = int(current_color[0] * (1 - color_transition) + next_color[0] * color_transition)
-        g = int(current_color[1] * (1 - color_transition) + next_color[1] * color_transition)
-        b = int(current_color[2] * (1 - color_transition) + next_color[2] * color_transition)
-        title_color = (r, g, b)
-
-        # ENHANCED: Render Super Student title with depth effect
-        title_text = "Super Student"
-        title_rect_center = (WIDTH // 2, HEIGHT // 2)
-
-        # 1. Draw shadow layers (3D extrusion effect)
-        shadow_depth = 1  # How far the shadow extends
-        shadow_color = (20, 20, 20)  # Very dark gray
-
-        # First render multiple shadow layers with increasing offset
-        for depth in range(shadow_depth, 0, -1):
-            shadow = TITLE_FONT.render(title_text, True, shadow_color)
-            shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
-            screen.blit(shadow, shadow_rect)
-
-        # 2. Draw outer glow (optional - subtle effect)
-        glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
-        for i, glow_color in enumerate(glow_colors):
-            glow = TITLE_FONT.render(title_text, True, glow_color)
-            offset = i + 1
-            for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
-                glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
-                screen.blit(glow, glow_rect)
-
-        # NEW: Add inner shadow/highlight through the center of letters with increased depth
-        highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))  # Brighter version of title color
-        shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))  # Darker version of title color
-        mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))  # Mid-tone for smoother transition
-
-        # Inner highlight (top-left of letter centers) - increased offset
-        highlight = TITLE_FONT.render(title_text, True, highlight_color)
-        highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
-        screen.blit(highlight, highlight_rect)
-
-        # Mid-tone layer for smoother depth transition
-        mid_tone = TITLE_FONT.render(title_text, True, mid_color)
-        mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
-        screen.blit(mid_tone, mid_rect)
-
-        # Inner shadow (bottom-right of letter centers) - increased offset
-        inner_shadow = TITLE_FONT.render(title_text, True, shadow_color)
-        inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
-        screen.blit(inner_shadow, inner_shadow_rect)
-
-        # 3. Draw the main text on top with original color
-        title = TITLE_FONT.render(title_text, True, title_color)
-        title_rect = title.get_rect(center=title_rect_center)
-        screen.blit(title, title_rect)
-
-        # Instructions
-        instructions = small_font.render("Click to start!", True, (255, 0, 0))  # Changed to red
-        instruction_rect = instructions.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 200))
-        screen.blit(instructions, instruction_rect)
-
-        # Pulsing SANGSOM text effect
-        sangsom_color_pulse += 0.05
-        if sangsom_color_pulse > 2 * math.pi:
-            sangsom_color_pulse = 0
-
-        # Create a pulsing yellow for the SANGSOM text
-        pulse_factor = (math.sin(sangsom_color_pulse) + 1) / 2  # Value between 0 and 1
-        bright_yellow = (255, 255, 0)  # Bright gold yellow
-        lite_yellow = (255, 255, 150)  # Lighter yellow
-        sangsom_color = tuple(int(bright_yellow[i] * (1 - pulse_factor) + lite_yellow[i] * pulse_factor) for i in range(3))
-
-        # Render the collaboration text in parts to colorize SANGSOM
-        collab_font = pygame.font.Font(None, 100)
-        collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
-        collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
-        collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
-
-        # Position each part
-        collab_rect1 = collab_text1.get_rect()
-        collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
-        collab_rect1.centery = HEIGHT // 2 + 350
-
-        collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 350))
-
-        collab_rect3 = collab_text3.get_rect()
-        collab_rect3.left = collab_rect2.right
-        collab_rect3.centery = HEIGHT // 2 + 350
-
-        # Draw each text component
-        screen.blit(collab_text1, collab_rect1)
-        screen.blit(collab_text2, collab_rect2)
-        screen.blit(collab_text3, collab_rect3)
-
-        # Creator info at bottom
-        creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
-        creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40))
-        screen.blit(creator_text, creator_rect)
-
-        pygame.display.flip()
-        flash_count += 1
-        if flash_count % 30 == 0:
-            flash = not flash
-        clock.tick(60)
 
 def draw_neon_button(rect, base_color):
     """Draws a button with a neon glow effect."""
@@ -423,8 +349,8 @@ def level_menu():
 def game_loop(mode):
     global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer
 
-    # Initialize swirling particles
-    create_swirl_particles(WIDTH // 2, HEIGHT // 2)
+    # REVERT: Restore swirl particles and explosion counts for levels gameplay
+    create_swirl_particles(WIDTH // 2, HEIGHT // 2, count=50)  # Restore to 50
 
     # Reset all game states
     particles = []
@@ -482,11 +408,11 @@ def game_loop(mode):
     overall_destroyed = 0  # <-- Initialize here to avoid UnboundLocalError
     running = True
 
-    clock = pygame.time.Clock()
+    clock = pygame.Clock()
 
-    # Create background stars
+    # Restore number of background stars
     stars = []
-    for _ in range(100):
+    for _ in range(100):  # Restore to 100
         x = random.randint(0, WIDTH)
         y = random.randint(0, HEIGHT)
         radius = random.randint(2, 4)
@@ -525,10 +451,9 @@ def game_loop(mode):
             (0, 200, 0),    # Green
             (255, 255, 0),  # Yellow
             (128, 0, 255),  # Purple
-            (0, 0, 0),      # Black
         ]
-        color_names = ["Blue", "Red", "Green", "Yellow", "Purple", "Black"]
-        mother_color_idx = random.randint(0, 5)
+        color_names = ["Blue", "Red", "Green", "Yellow", "Purple"]
+        mother_color_idx = random.randint(0, len(COLORS_LIST) - 1)
         mother_color = COLORS_LIST[mother_color_idx]
         mother_color_name = color_names[mother_color_idx]
         center = (WIDTH // 2, HEIGHT // 2)
@@ -538,23 +463,54 @@ def game_loop(mode):
         running = True
         clock = pygame.time.Clock()
         score = 0
-        target_dots_left = 25
+        # --- VICTORY: Only 10 dots needed ---
+        target_dots_left = 10
         dots = []
         dots_active = False
         frame = 0
         overall_destroyed = 0  # <-- Already initialized above, but safe to re-initialize here
+
         # --- Mother Dot Vibration ---
         for vib in range(vibration_frames):
-            screen.fill(WHITE)
+            screen.fill(BLACK)
             vib_x = center[0] + random.randint(-6, 6)
             vib_y = center[1] + random.randint(-6, 6)
             pygame.draw.circle(screen, mother_color, (vib_x, vib_y), mother_radius)
             # Draw label
-            label = small_font.render("Remember this color!", True, BLACK)
+            label = small_font.render("Remember this color!", True, WHITE)
             label_rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 60))
             screen.blit(label, label_rect)
+            # Remove all other text (set to black for easy finding)
+            screen.blit(small_font.render("", True, BLACK), (0,0))
             pygame.display.flip()
-            clock.tick(60)
+            clock.tick(50)  # PERFORMANCE: Lower FPS
+
+        # --- WAIT FOR CLICK TO START DISPERSION ---
+        waiting_for_dispersion = True
+        while waiting_for_dispersion:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    return False
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    running = False
+                    return False
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    waiting_for_dispersion = False
+            # Draw the mother dot and prompt
+            screen.fill(BLACK)
+            pygame.draw.circle(screen, mother_color, center, mother_radius)
+            label = small_font.render("Remember this color!", True, WHITE)
+            label_rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 60))
+            screen.blit(label, label_rect)
+            prompt = small_font.render("Click to start!", True, (255, 255, 0))
+            prompt_rect = prompt.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 120))
+            screen.blit(prompt, prompt_rect)
+            # Remove all other text (set to black for easy finding)
+            screen.blit(small_font.render("", True, BLACK), (0,0))
+            pygame.display.flip()
+            clock.tick(50)  # PERFORMANCE: Lower FPS
+
         # --- Mother Dot Disperse Animation ---
         disperse_particles = []
         for i in range(100):
@@ -565,22 +521,20 @@ def game_loop(mode):
                 "speed": random.uniform(12, 18),
                 "color": mother_color if i < 25 else None,  # Will assign distractor colors below
             })
-        # Assign distractor colors
+        # Assign distractor colors (robust to any number of distractor colors)
         distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != mother_color_idx]
-        color_counts = [0] * 5
-        for i in range(25, 100):
-            color_idx = (i - 25) // 15
-            disperse_particles[i]["color"] = distractor_colors[color_idx]
-            color_counts[color_idx] += 1
-        for t in range(disperse_frames):
-            screen.fill(WHITE)
-            for p in disperse_particles:
-                p["radius"] += p["speed"]
-                x = int(center[0] + math.cos(p["angle"]) * p["radius"])
-                y = int(center[1] + math.sin(p["angle"]) * p["radius"])
-                pygame.draw.circle(screen, p["color"], (x, y), 22)
-            pygame.display.flip()
-            clock.tick(60)
+        num_distractor_colors = len(distractor_colors)
+        total_distractor_dots = 75
+        dots_per_color = total_distractor_dots // num_distractor_colors
+        extra = total_distractor_dots % num_distractor_colors
+        idx = 25
+        for color_idx, color in enumerate(distractor_colors):
+            count = dots_per_color + (1 if color_idx < extra else 0)
+            for _ in range(count):
+                if idx < 100:
+                    disperse_particles[idx]["color"] = color
+                    idx += 1
+
         # --- Initialize Bouncing Dots ---
         dots = []
         for i, p in enumerate(disperse_particles):
@@ -592,11 +546,23 @@ def game_loop(mode):
                 "x": x, "y": y,
                 "dx": dx, "dy": dy,
                 "color": p["color"],
-                "radius": 22,
+                "radius": 24,  # was 22, now 10% bigger
                 "target": True if p["color"] == mother_color else False,
                 "alive": True,
             })
         dots_active = True
+        for t in range(disperse_frames):
+            screen.fill(BLACK)
+            for p in disperse_particles:
+                p["radius"] += p["speed"]
+                x = int(center[0] + math.cos(p["angle"]) * p["radius"])
+                y = int(center[1] + math.sin(p["angle"]) * p["radius"])
+                pygame.draw.circle(screen, p["color"], (x, y), 24)
+            # Remove all other text (set to black for easy finding)
+            screen.blit(small_font.render("", True, BLACK), (0,0))
+            pygame.display.flip()
+            clock.tick(50)  # PERFORMANCE: Lower FPS
+
         # --- Main Colors Level Loop ---
         while running:
             for event in pygame.event.get():
@@ -617,7 +583,7 @@ def game_loop(mode):
                                     target_dots_left -= 1
                                     score += 10
                                     overall_destroyed += 1  # <-- Increment destroyed count
-                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=20)
+                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)  # PERFORMANCE: shorter explosion
                                 # No effect for distractors
                                 break
             # --- Update Dots ---
@@ -640,7 +606,7 @@ def game_loop(mode):
                     dot["y"] = HEIGHT - dot["radius"]
                     dot["dy"] *= -1
             # --- Draw ---
-            screen.fill(WHITE)
+            screen.fill(BLACK)
             # Draw all alive dots
             for dot in dots:
                 if dot["alive"]:
@@ -653,15 +619,16 @@ def game_loop(mode):
                 else:
                     explosions.remove(explosion)
             # HUD
-            info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, BLACK)
+            info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, WHITE)
             screen.blit(info, (20, 20))
             # Show a sample target dot at top right
-            pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 22)
-            pygame.draw.rect(screen, BLACK, (WIDTH - 90, 30, 60, 60), 2)
-            # --- Add this: call display_info for consistency with other modes ---
-            display_info(score, "color", mother_color_name, overall_destroyed, 25, "colors")
+            pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 24)
+            pygame.draw.rect(screen, WHITE, (WIDTH - 90, 30, 60, 60), 2)
+            # Remove all other text (set to black for easy finding)
+            screen.blit(small_font.render("", True, BLACK), (0,0))
+            display_info(score, "color", mother_color_name, overall_destroyed, 10, "colors")
             pygame.display.flip()
-            clock.tick(60)
+            clock.tick(50)  # PERFORMANCE: Lower FPS
             # End condition
             if target_dots_left <= 0:
                 pygame.time.delay(500)
@@ -685,23 +652,6 @@ def game_loop(mode):
                     current_ability = abilities[(abilities.index(current_ability) + 1) % len(abilities)]
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if not mouse_down:
-                    mouse_press_time = pygame.time.get_ticks()
-                    mouse_down = True
-            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                release_time = pygame.time.get_ticks()
-                mouse_down = False
-                duration = release_time - mouse_press_time
-                if duration <= 1000: # Check if it's a click (not a hold)
-                    click_count += 1
-                    if not game_started:
-                        game_started = True
-                    else:
-                        click_x, click_y = pygame.mouse.get_pos()
-                        current_time = release_time
-                        # Double click check (less relevant now, but kept logic)
-                        # if current_time - last_click_time < 250:
-                        #     # Potentially re-target logic (removed for simplicity)
-                        #     last_click_time = 0
                         # else:
                         last_click_time = current_time
                         # --- Process Click on Target ---
@@ -1243,7 +1193,7 @@ def game_loop(mode):
 
         # --- Update Display ---
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(50)  # PERFORMANCE: Lower FPS for all main game loops
         frame_count += 1
 
 
@@ -1451,7 +1401,6 @@ def display_info(score, ability, target_letter, overall_destroyed, total_letters
     target_rect = target_text.get_rect(topright=(WIDTH - 20, 20))
     screen.blit(target_text, target_rect)
 
-    # Use overall destroyed count for progress
     progress_text = small_font.render(f"Destroyed: {overall_destroyed}/{total_letters}", True, BLACK)
     progress_rect = progress_text.get_rect(topright=(WIDTH - 20, 60))
     screen.blit(progress_text, progress_rect)
@@ -1534,9 +1483,9 @@ def checkpoint_screen():
     continue_rect = pygame.Rect((center_x - button_width - 20, center_y + 50), (button_width, button_height))
     menu_rect = pygame.Rect((center_x + 20, center_y + 50), (button_width, button_height))
 
-    # Initialize swirling particles for background effect
+    # Restore checkpoint screen swirling particles
     swirling_particles = []
-    for _ in range(150): # More particles for checkpoint screen
+    for _ in range(150):  # Restore to 150
         angle = random.uniform(0, 2 * math.pi)
         distance = random.uniform(100, max(WIDTH, HEIGHT) * 0.6) # Start further out
         angular_speed = random.uniform(0.01, 0.03) * random.choice([-1, 1]) # Slower swirl
@@ -1621,19 +1570,14 @@ def create_player_trail(x, y):
             "start_duration": 20
         })
 
+# Restore charge particle count for charge-up effect
 def start_charge_up_effect(player_x, player_y, target_x, target_y):
-    """Initializes the charge-up ability effect."""
     global charging_ability, charge_timer, charge_particles, ability_target
     charging_ability = True
-    charge_timer = 45  # Slightly longer charge time (frames)
+    charge_timer = 45
     ability_target = (target_x, target_y)
-
-    # Clear any existing charge particles
     charge_particles = []
-
-    # Create materializing particles around the screen, converging towards player
-    for _ in range(150): # Fewer particles needed?
-        # Start particles randomly on screen edges or further out
+    for _ in range(150):  # Restore to 150
         side = random.choice(['top', 'bottom', 'left', 'right'])
         if side == 'top':
             x, y = random.uniform(0, WIDTH), random.uniform(-100, -20)
@@ -1643,7 +1587,6 @@ def start_charge_up_effect(player_x, player_y, target_x, target_y):
             x, y = random.uniform(-100, -20), random.uniform(0, HEIGHT)
         else: # right
             x, y = random.uniform(WIDTH + 20, WIDTH + 100), random.uniform(0, HEIGHT)
-
 
         charge_particles.append({
             "type": "materializing",
@@ -1663,8 +1606,8 @@ def start_charge_up_effect(player_x, player_y, target_x, target_y):
             "trail": random.random() < 0.5 # More trails
         })
 
-def create_swirl_particles(center_x, center_y, radius=150, count=50):
-    """Creates swirling particles around the center target display."""
+# Restore swirl particle count for create_swirl_particles
+def create_swirl_particles(center_x, center_y, radius=150, count=50):  # Restore to 50
     global swirl_particles
     swirl_particles = [] # Clear existing ones
 

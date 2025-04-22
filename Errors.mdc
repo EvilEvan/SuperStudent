@@ -1,5 +1,13 @@
 Errors.mdc
 ---
+22/04/2025 08:29
+  while game_loop(mode):
+          ~~~~~~~~~^^^^^^
+  File "C:\Users\User\OneDrive\Desktop\VS\SuperStudent\superstudent.py", line 525, in game_loop
+    disperse_particles[i]["color"] = distractor_colors[color_idx]
+                                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+IndexError: list index out of range
+---
 21/04/2025 14:40 
 An error occurred: cannot access local variable 'overall_destroyed' where it is not associated with a value
 Traceback (most recent call last):

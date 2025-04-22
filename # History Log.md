@@ -54,6 +54,44 @@ Neglected notes
 - Context: The main game loop called `display_info` with `overall_destroyed`, which was not defined in "colors" mode, causing a runtime error.  
 - Fix: Now, `display_info` is only called in the main loop if not in "colors" mode, since "colors" mode handles its own HUD and progress display. This prevents undefined variable errors and avoids double HUD rendering.
 
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- In "colors" level, the mother dot now disperses only after a user click (not automatically).
+- Dispersed dots are now 10% larger (radius increased from 22 to 24).
+- Victory is achieved by clicking 10 target dots (was 25).
+- Performance improvements: reduced number of background, swirl, checkpoint, and charge particles; capped frame rate at 50 FPS for all modes.
+- Reason: Implements prompt requirements for color level interactivity and size, and addresses lag by reducing particle counts and frame rate for smoother gameplay on large screens.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Reverted swirl, explosion, and welcome screen particle counts to previous higher values for visual appeal.
+- Reason: Performance issues were not critical on the welcome page, and restoring particle counts improves the game's visual experience as originally intended.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Reduced the number of gravitational particles on the Welcome screen for improved performance on large displays.
+- Restored original (higher) particle and explosion counts for all gameplay levels to maintain visual appeal.
+- Reason: Ensures smooth startup and menu experience while keeping gameplay visually rich as intended for the QBOARD device.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Changed the welcome screen from an animated/motion display to a static "image only" version.
+- The welcome screen now renders all visuals (title, particles, etc.) once and displays that as a static image until the user clicks.
+- Reason: Reduces graphics load and improves performance on large displays, while preserving the intended visual style.
+
+**Model: gpt-4o | Date: 2025-04-21 | Logic:**  
+- Changed the background color in the "colors" level from white to black for all phases (mother dot, dispersion, bouncing dots, HUD).
+- Removed black from the list of possible target colors in the "colors" level (so "Black" is never the mother dot).
+- Ensured all HUD and prompt text remains visible on a black background (using white/yellow as needed).
+- Reason: Black background is gentler on the eyes and improves visual comfort for players on large displays.
+
+**Model: gpt-4o | Date: 2025-04-22 | Logic:**  
+- Fixed IndexError in the "colors" level disperse animation when assigning distractor dot colors.
+- Cause: After removing "Black" from COLORS_LIST, the code still tried to assign 5 groups of distractor dots, but only 4 distractor colors remained, causing an out-of-range error.
+- Fix: Now, the code dynamically distributes the 75 distractor dots as evenly as possible among the available distractor colors, preventing out-of-range errors regardless of the number of distractor colors.
+- Reason: Ensures robust color assignment and prevents crashes if the number of distractor colors changes.
+
+**Model: gpt-4o | Date: 2025-04-22 | Logic:**  
+- Removed all non-colors-level text from the "colors" level screens. Any removed text is replaced with a black string for easy identification and future editing.
+- Only HUD and prompts directly related to the colors level remain visible.
+- Reason: Ensures clarity and focus for the colors level, and makes it easy to spot and edit any remaining or future non-relevant text.
+
 # Notes
 
 - Centre‑display logic now prioritizes `mode == "clcase"` before any alpha substitution.  
