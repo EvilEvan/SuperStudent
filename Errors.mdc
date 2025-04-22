@@ -1,37 +1,4 @@
 Errors.mdc
-
----
-22/04/2025 11:35
-Note: Fixed SyntaxError on line 1121 (`for _ in range(3:)` -> `for _ in range(3):`).
----
-22/04/2025 11:33
-error occurred: module 'pygame' has no attribute 'Clock'
-Traceback (most recent call last):
-Traceback (most recent call last):
-Traceback (most recent call last):
-  File "C:\Users\User\OneDrive\Desktop\VS\SuperStudent\supeTraceback (most recent call last):
-rstudent.py", line 1784, in <module>
-    while game_loop(mode):
-          ~~~~~~~~~^^^^^^
-  File "C:\Users\User\OneDrive\Desktop\VS\SuperStudent\superstudent.py", line 411, in game_loop    
-    clock = pygame.Clock()
-            ^^^^^^^^^^^^
-AttributeError: module 'pygame' has no attribute 'Cpython superstudent.pyer\OneDrive\Desktopygame 2.6.1 (SDL 2.28.4, Python 3.13.2)
-Hello from the pygame community. https://www.pygame.org/contribute.html
-An error occurred: name 'level_menu' is not defined
-Traceback (most recent call last):
-  File "C:\Users\User\OneDrive\Desktop\VS\SuperStudent\superstudent.py", line 1658, in <module>
-    mode = level_menu()
-           ^^^^^^^^^^
-NameError: name 'level_menu' is not defined
-PS C:\Users\User\OneDrive\Desktop\VS\SuperStudent> python superstudent.py
-  File "C:\Users\User\OneDrive\Desktop\VS\SuperStudent\superstudent.py", line 1121
-    for _ in range(3:
-                    ^
-SyntaxError: invalid syntax
----
-22/04/2025 10:30
-Note: Replaced welcome screen implementation. The new version uses dynamic particle effects (starfield) and text rendering. Monitor performance on target device (QBOARD) in case adjustments to particle count or effects are needed to prevent overstimulation or lag.
 ---
 22/04/2025 10:07
 error occurred: module 'pygame' has no attribute 'Clock'

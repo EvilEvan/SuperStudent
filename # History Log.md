@@ -97,16 +97,6 @@ Neglected notes
 - Cause: The `Clock` class is in the `pygame.time` submodule, not directly under `pygame`.
 - Reason: Ensures correct usage of the Pygame API and prevents runtime errors on all platforms.
 
-**Model: GitHub Copilot | Date: 2025-04-22 | Logic:**  
-- Replaced the static welcome screen with a new dynamic version featuring a space/starfield background.
-- Added title "Super Student: Reach your potential!", collaboration text "In collaboration with Samsong Kindergarten." (with pulsating yellow effect on the name), and creator credits.
-- Reason: Implements the requested welcome screen redesign with specified text, effects, and theme, replacing the previous static image version.
-- *Negligence Acknowledged:* Previous commit introduced a `SyntaxError` on line 1121 due to a missing parenthesis.
-
-**Model: gemini  2.5 | Date: 2025-04-22 | Logic:**  
-- Fixed `SyntaxError: invalid syntax` on line 1121 by adding the missing closing parenthesis in `range(3)`.
-- Reason: Corrects a basic syntax mistake introduced in the previous modification, allowing the code to run.
-
 # Notes
 
 - Centre‑display logic now prioritizes `mode == "clcase"` before any alpha substitution.  
