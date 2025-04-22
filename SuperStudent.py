@@ -408,7 +408,7 @@ def game_loop(mode):
     overall_destroyed = 0  # <-- Initialize here to avoid UnboundLocalError
     running = True
 
-    clock = pygame.Clock()
+    clock = pygame.time.Clock()
 
     # Restore number of background stars
     stars = []
@@ -652,6 +652,23 @@ def game_loop(mode):
                     current_ability = abilities[(abilities.index(current_ability) + 1) % len(abilities)]
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if not mouse_down:
+                    mouse_press_time = pygame.time.get_ticks()
+                    mouse_down = True
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                release_time = pygame.time.get_ticks()
+                mouse_down = False
+                duration = release_time - mouse_press_time
+                if duration <= 1000: # Check if it's a click (not a hold)
+                    click_count += 1
+                    if not game_started:
+                        game_started = True
+                    else:
+                        click_x, click_y = pygame.mouse.get_pos()
+                        current_time = release_time
+                        # Double click check (less relevant now, but kept logic)
+                        # if current_time - last_click_time < 250:
+                        #     # Potentially re-target logic (removed for simplicity)
+                        #     last_click_time = 0
                         # else:
                         last_click_time = current_time
                         # --- Process Click on Target ---
