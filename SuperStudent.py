@@ -84,103 +84,32 @@ convergence_timer = 0
 ###############################################################################
 
 def welcome_screen():
-    """Show a static welcome screen (image only, no animation)."""
-    # --- Draw everything ONCE to a surface ---
-    static_surface = pygame.Surface((WIDTH, HEIGHT))
-    # Vivid bright colors for particles
-    particle_colors = [
-        (255, 0, 128),   # Bright pink
-        (0, 255, 128),   # Bright green
-        (128, 0, 255),   # Bright purple
-        (255, 128, 0),   # Bright orange
-        (0, 128, 255)    # Bright blue
-    ]
-    # Draw static gravitational particles (random positions)
-    grav_particles = []
-    for _ in range(120):
-        angle = random.uniform(0, math.pi * 2)
-        distance = random.uniform(200, max(WIDTH, HEIGHT))
-        x = WIDTH // 2 + math.cos(angle) * distance
-        y = HEIGHT // 2 + math.sin(angle) * distance
-        grav_particles.append({
-            "x": x,
-            "y": y,
-            "color": random.choice(particle_colors),
-            "size": random.randint(13, 17),
-        })
-    static_surface.fill(BLACK)
-    for particle in grav_particles:
-        pygame.draw.circle(static_surface, particle["color"],
-                           (int(particle["x"]), int(particle["y"])),
-                           particle["size"])
-    # Smooth color transition for title (pick a random color)
-    current_color = random.choice(FLAME_COLORS)
-    next_color = random.choice(FLAME_COLORS)
-    r = int(current_color[0] * 0.5 + next_color[0] * 0.5)
-    g = int(current_color[1] * 0.5 + next_color[1] * 0.5)
-    b = int(current_color[2] * 0.5 + next_color[2] * 0.5)
-    title_color = (r, g, b)
-    # Draw title with depth/glow effect (single frame)
-    title_text = "Super Student"
-    title_rect_center = (WIDTH // 2, HEIGHT // 2)
-    shadow_color = (20, 20, 20)
-    for depth in range(1, 0, -1):
-        shadow = TITLE_FONT.render(title_text, True, shadow_color)
-        shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
-        static_surface.blit(shadow, shadow_rect)
-    glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
-    for i, glow_color in enumerate(glow_colors):
-        glow = TITLE_FONT.render(title_text, True, glow_color)
-        offset = i + 1
-        for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
-            glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
-            static_surface.blit(glow, glow_rect)
-    highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
-    shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
-    mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
-    highlight = TITLE_FONT.render(title_text, True, highlight_color)
-    highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
-    static_surface.blit(highlight, highlight_rect)
-    mid_tone = TITLE_FONT.render(title_text, True, mid_color)
-    mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
-    static_surface.blit(mid_tone, mid_rect)
-    inner_shadow = TITLE_FONT.render(title_text, True, shadow_color)
-    inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
-    static_surface.blit(inner_shadow, inner_shadow_rect)
-    title = TITLE_FONT.render(title_text, True, title_color)
-    title_rect = title.get_rect(center=title_rect_center)
-    static_surface.blit(title, title_rect)
-    # Instructions
-    instructions = small_font.render("Click to start!", True, (255, 0, 0))
-    instruction_rect = instructions.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 200))
-    static_surface.blit(instructions, instruction_rect)
-    # Pulsing SANGSOM text effect (pick a static pulse)
-    pulse_factor = 0.5
-    bright_yellow = (255, 255, 0)
-    lite_yellow = (255, 255, 150)
-    sangsom_color = tuple(int(bright_yellow[i] * (1 - pulse_factor) + lite_yellow[i] * pulse_factor) for i in range(3))
-    collab_font = pygame.font.Font(None, 100)
-    collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
-    collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
-    collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
-    collab_rect1 = collab_text1.get_rect()
-    collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
-    collab_rect1.centery = HEIGHT // 2 + 350
-    collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 350))
-    collab_rect3 = collab_text3.get_rect()
-    collab_rect3.left = collab_rect2.right
-    collab_rect3.centery = HEIGHT // 2 + 350
-    static_surface.blit(collab_text1, collab_rect1)
-    static_surface.blit(collab_text2, collab_rect2)
-    static_surface.blit(collab_text3, collab_rect3)
-    creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
-    creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40))
-    static_surface.blit(creator_text, creator_rect)
-    # --- Show the static image until click/quit ---
+    """Shows a new welcome screen with space theme and pulsating text."""
+    clock = pygame.time.Clock()
     running = True
+
+    # Fonts
+    title_font = pygame.font.Font(None, 180) # Larger title font
+    collab_font = pygame.font.Font(None, 70)
+    creator_font = pygame.font.Font(None, 30) # Tiny font for creators
+
+    # Colors
+    pulsating_yellow_bright = (255, 255, 0)
+    pulsating_yellow_dim = (200, 200, 0)
+
+    # Starfield effect
+    stars = []
+    for _ in range(300): # More stars for a denser field
+        x = random.randint(0, WIDTH)
+        y = random.randint(0, HEIGHT)
+        size = random.randint(1, 3)
+        # Add faint colors for some stars
+        color_val = random.randint(150, 220)
+        color = (color_val, color_val, random.randint(200, 255)) if random.random() < 0.1 else (color_val, color_val, color_val)
+        speed = random.uniform(0.1, 0.5) # Slow drift speed
+        stars.append({"x": x, "y": y, "size": size, "color": color, "speed": speed})
+
     while running:
-        screen.blit(static_surface, (0, 0))
-        pygame.display.flip()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -189,7 +118,67 @@ def welcome_screen():
                 pygame.quit()
                 exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
-                running = False
+                running = False # Exit welcome screen on click
+
+        # --- Drawing ---
+        screen.fill(BLACK)
+
+        # Update and draw stars
+        for star in stars:
+            star["y"] += star["speed"] # Move stars downwards slowly
+            if star["y"] > HEIGHT: # Reset star if it goes off screen
+                star["y"] = 0
+                star["x"] = random.randint(0, WIDTH)
+            pygame.draw.circle(screen, star["color"], (int(star["x"]), int(star["y"])), star["size"])
+
+        # Title
+        title_text = "Super Student: Reach your potential!"
+        title_surf = title_font.render(title_text, True, WHITE)
+        # Add a subtle shadow/glow
+        title_shadow_surf = title_font.render(title_text, True, (50, 50, 150)) # Dark blue glow
+        title_rect = title_surf.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+        screen.blit(title_shadow_surf, title_rect.move(3, 3))
+        screen.blit(title_surf, title_rect)
+
+        # Collaboration Text with Pulsating Effect
+        time_factor = math.sin(pygame.time.get_ticks() * 0.005) # Slow pulsation speed
+        pulse_factor = (time_factor + 1) / 2 # Normalize sin output to 0-1 range
+        # Interpolate color between dim and bright yellow
+        r = int(pulsating_yellow_dim[0] * (1 - pulse_factor) + pulsating_yellow_bright[0] * pulse_factor)
+        g = int(pulsating_yellow_dim[1] * (1 - pulse_factor) + pulsating_yellow_bright[1] * pulse_factor)
+        b = int(pulsating_yellow_dim[2] * (1 - pulse_factor) + pulsating_yellow_bright[2] * pulse_factor)
+        sangsom_color = (r, g, b)
+
+        collab_text1 = "In collaboration with "
+        collab_text2 = "Samsong Kindergarten."
+        collab_surf1 = collab_font.render(collab_text1, True, WHITE)
+        collab_surf2 = collab_font.render(collab_text2, True, sangsom_color)
+
+        total_collab_width = collab_surf1.get_width() + collab_surf2.get_width()
+        start_x = (WIDTH - total_collab_width) // 2
+        collab_y = HEIGHT // 2 + 50
+
+        screen.blit(collab_surf1, (start_x, collab_y))
+        screen.blit(collab_surf2, (start_x + collab_surf1.get_width(), collab_y))
+
+        # Creator Text
+        creator_text = "Created by teacher Evan and Teacher Lee"
+        creator_surf = creator_font.render(creator_text, True, (180, 180, 180)) # Light gray
+        creator_rect = creator_surf.get_rect(center=(WIDTH // 2, HEIGHT - 40))
+        screen.blit(creator_surf, creator_rect)
+
+        # Click Prompt (Optional, but good UX)
+        prompt_font = pygame.font.Font(None, 50)
+        prompt_text = prompt_font.render("Click anywhere to start", True, WHITE)
+        prompt_rect = prompt_text.get_rect(center=(WIDTH // 2, HEIGHT * 3 // 4 + 50))
+        # Subtle fade in/out for prompt
+        prompt_alpha = int(128 + 127 * math.sin(pygame.time.get_ticks() * 0.002))
+        prompt_text.set_alpha(prompt_alpha)
+        screen.blit(prompt_text, prompt_rect)
+
+
+        pygame.display.flip()
+        clock.tick(60) # Keep reasonable frame rate
 
 def draw_neon_button(rect, base_color):
     """Draws a button with a neon glow effect."""
@@ -1129,7 +1118,7 @@ def game_loop(mode):
                         screen.blit(particle_surface, (int(draw_x - particle["size"]), int(draw_y - particle["size"])))
                     else:
                         # Particle reached target - remove and create small flash
-                        for _ in range(3):
+                        for _ in range(3): # <-- Added closing parenthesis here
                             particles.append({
                                 "x": particle["target_x"], "y": particle["target_y"],
                                 "color": particle["color"], "size": random.uniform(12, 24),
