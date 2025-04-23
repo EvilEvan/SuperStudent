@@ -1,3 +1,11 @@
+"""
+Super Student - Glass Shatter Display
+
+Description:
+    This game features a dynamic 'Glass Shatter Display' effect. When the player makes a mistake (such as a misclick or mistap), a crack appears on the screen at the point of error. After a certain number of cracks, the entire background 'shatters' with a visual effect, swapping the background color and creating glass particle effects. This mechanic provides immediate visual feedback for mistakes and adds a dramatic, interactive element to the gameplay experience.
+
+Date: 2024-06-09
+"""
 import pygame
 import random
 import math
@@ -20,6 +28,20 @@ info = pygame.display.Info()
 WIDTH, HEIGHT = info.current_w, info.current_h
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
 pygame.display.set_caption("Super Student")
+
+# OPTIMIZATION: Global particle system limits to prevent lag
+MAX_PARTICLES = 400  # Maximum particles allowed at once
+MAX_EXPLOSIONS = 10  # Maximum explosions allowed at once
+MAX_SWIRL_PARTICLES = 150  # Maximum swirl particles
+PARTICLE_CULLING_DISTANCE = WIDTH  # Distance at which to cull offscreen particles
+# Particle pool for object reuse
+particle_pool = []
+for _ in range(100):  # Pre-create some particles to reuse
+    particle_pool.append({
+        "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
+        "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
+        "active": False
+    })
 
 # Define colors and effects
 WHITE = (255, 255, 255)
@@ -61,6 +83,15 @@ active_touches = {}
 # Declare explosions and lasers in global scope so they are available to all functions
 explosions = []
 lasers = []
+
+# Glass cracking effect variables
+glass_cracks = []
+MAX_CRACKS = 15  # Number of cracks needed to shatter the screen
+background_shattered = False  # Track if the background is currently shattered
+CRACK_DURATION = 600  # How long the shattered effect lasts (in frames)
+shatter_timer = 0  # Timer for the shattered effect
+opposite_background = BLACK  # Opposite of white
+current_background = WHITE  # Start with white background for levels
 
 # Add this near the other global variables at the top
 player_color_transition = 0
@@ -347,7 +378,7 @@ def level_menu():
 ###############################################################################
 
 def game_loop(mode):
-    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer
+    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer
 
     # REVERT: Restore swirl particles and explosion counts for levels gameplay
     create_swirl_particles(WIDTH // 2, HEIGHT // 2, count=50)  # Restore to 50
@@ -365,6 +396,11 @@ def game_loop(mode):
     particles_converging = False
     convergence_target = None
     convergence_timer = 0
+    
+    # Reset crack variables for clean start
+    glass_cracks = []
+    background_shattered = False
+    shatter_timer = 0
 
     # Add a flag to prevent checkpoint screen after level completion
     just_completed_level = False
@@ -372,6 +408,18 @@ def game_loop(mode):
     # Add checkpoint delay counter
     checkpoint_delay_frames = 0
     checkpoint_waiting = False
+    
+    # Track whether shapes level has been completed
+    shapes_completed = False
+    # Try to read from a persistent settings file to check if shapes was completed
+    try:
+        with open("level_progress.txt", "r") as f:
+            progress = f.read().strip()
+            if "shapes_completed" in progress:
+                shapes_completed = True
+    except:
+        # If file doesn't exist or can't be read, assume shapes not completed
+        shapes_completed = False
 
     # Create sequence based on selected mode
     if mode == "alphabet":
@@ -453,9 +501,17 @@ def game_loop(mode):
             (128, 0, 255),  # Purple
         ]
         color_names = ["Blue", "Red", "Green", "Yellow", "Purple"]
-        mother_color_idx = random.randint(0, len(COLORS_LIST) - 1)
-        mother_color = COLORS_LIST[mother_color_idx]
-        mother_color_name = color_names[mother_color_idx]
+        
+        # Start with the first color in the list instead of random
+        color_idx = 0
+        mother_color = COLORS_LIST[color_idx]
+        mother_color_name = color_names[color_idx]
+        
+        # Track how many of current color have been destroyed
+        current_color_dots_destroyed = 0
+        # Total number of dots needed to destroy per color before switching
+        dots_per_color = 3
+        
         center = (WIDTH // 2, HEIGHT // 2)
         mother_radius = 180
         vibration_frames = 30
@@ -522,7 +578,7 @@ def game_loop(mode):
                 "color": mother_color if i < 25 else None,  # Will assign distractor colors below
             })
         # Assign distractor colors (robust to any number of distractor colors)
-        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != mother_color_idx]
+        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != color_idx]
         num_distractor_colors = len(distractor_colors)
         total_distractor_dots = 75
         dots_per_color = total_distractor_dots // num_distractor_colors
@@ -574,18 +630,38 @@ def game_loop(mode):
                     break
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = pygame.mouse.get_pos()
+                    hit_target = False
                     for dot in dots:
                         if dot["alive"]:
                             dist = math.hypot(mx - dot["x"], my - dot["y"])
                             if dist <= dot["radius"]:
+                                hit_target = True
                                 if dot["target"]:
                                     dot["alive"] = False
                                     target_dots_left -= 1
                                     score += 10
                                     overall_destroyed += 1  # <-- Increment destroyed count
+                                    current_color_dots_destroyed += 1  # Track per color
                                     create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)  # PERFORMANCE: shorter explosion
+                                    
+                                    # Check if we need to switch the target color
+                                    if current_color_dots_destroyed >= 3:
+                                        color_idx = (color_idx + 1) % len(COLORS_LIST)
+                                        mother_color = COLORS_LIST[color_idx]
+                                        mother_color_name = color_names[color_idx]
+                                        current_color_dots_destroyed = 0
+                                        
+                                        # Update target status for all dots
+                                        for d in dots:
+                                            if d["alive"]:
+                                                d["target"] = (d["color"] == mother_color)
                                 # No effect for distractors
                                 break
+            
+                    # Add crack on misclick in colors level
+                    if not hit_target:
+                        handle_misclick(mx, my)
+            
             # --- Update Dots ---
             for dot in dots:
                 if not dot["alive"]:
@@ -607,6 +683,10 @@ def game_loop(mode):
                     dot["dy"] *= -1
             # --- Draw ---
             screen.fill(BLACK)
+
+            # Draw cracks if in colors level too (use black background) 
+            draw_cracks(screen)
+
             # Draw all alive dots
             for dot in dots:
                 if dot["alive"]:
@@ -621,18 +701,37 @@ def game_loop(mode):
             # HUD
             info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, WHITE)
             screen.blit(info, (20, 20))
+            # Show progress toward next color change
+            progress_info = small_font.render(f"Next color in: {3 - current_color_dots_destroyed} dots", True, WHITE)
+            screen.blit(progress_info, (20, 60))
             # Show a sample target dot at top right
             pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 24)
             pygame.draw.rect(screen, WHITE, (WIDTH - 90, 30, 60, 60), 2)
             # Remove all other text (set to black for easy finding)
             screen.blit(small_font.render("", True, BLACK), (0,0))
-            display_info(score, "color", mother_color_name, overall_destroyed, 10, "colors")
+            display_info(score, "color", mother_color_name, overall_destroyed + letters_destroyed, 10, "colors")
             pygame.display.flip()
             clock.tick(50)  # PERFORMANCE: Lower FPS
             # End condition
             if target_dots_left <= 0:
                 pygame.time.delay(500)
-                well_done_screen(score)
+                # If shapes have been completed, show checkpoint screen instead of well_done
+                if shapes_completed:
+                    checkpoint_waiting = True
+                    checkpoint_delay_frames = 60  # Wait ~1 second for animations
+                    # Process checkpoint screen immediately
+                    if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
+                        if not checkpoint_screen():  # If checkpoint returns False (chose Menu)
+                            return False  # Return to menu
+                        else:
+                            # If continue button was pressed, restart the colors level
+                            # Instead of recursive call, set a flag for outer loop to handle the restart
+                            return True  # Signal to the main loop to restart
+                    else:
+                        checkpoint_delay_frames -= 1
+                else:
+                    # If shapes not completed, show normal well_done screen
+                    well_done_screen(score)
                 return True
         return False
 
@@ -671,9 +770,14 @@ def game_loop(mode):
                         #     last_click_time = 0
                         # else:
                         last_click_time = current_time
+                        
+                        # Flag to track if click hit a target
+                        hit_target = False
+                        
                         # --- Process Click on Target ---
                         for letter_obj in letters[:]:
                             if letter_obj["rect"].collidepoint(click_x, click_y):
+                                hit_target = True  # Marked as hit
                                 if letter_obj["value"] == target_letter:
                                     score += 10
                                     # Common destruction effects
@@ -684,13 +788,13 @@ def game_loop(mode):
 
                                     # Add visual feedback particles
                                     for i in range(20):
-                                        particles.append({
-                                            "x": letter_obj["x"], "y": letter_obj["y"],
-                                            "color": random.choice(FLAME_COLORS),
-                                            "size": random.randint(40, 80),
-                                            "dx": random.uniform(-2, 2), "dy": random.uniform(-2, 2),
-                                            "duration": 20
-                                        })
+                                        create_particle(
+                                            letter_obj["x"], letter_obj["y"],
+                                            random.choice(FLAME_COLORS),
+                                            random.randint(40, 80),
+                                            random.uniform(-2, 2), random.uniform(-2, 2),
+                                            20
+                                        )
 
                                     # Remove letter and update counts
                                     letters.remove(letter_obj)
@@ -714,7 +818,10 @@ def game_loop(mode):
                                     # Optional: Add feedback for clicking wrong target (e.g., small shake, sound)
                                     shake_duration = 5
                                     shake_magnitude = 3
-
+                
+                        # If no target was hit, add a crack to the screen
+                        if not hit_target and game_started:
+                            handle_misclick(click_x, click_y)
 
             if event.type == pygame.FINGERDOWN:
                 touch_id = event.finger_id
@@ -724,9 +831,13 @@ def game_loop(mode):
                 if not game_started:
                     game_started = True
                 else:
+                    # Flag to track if touch hit a target
+                    hit_target = False
+                    
                     # --- Process Touch on Target ---
                     for letter_obj in letters[:]:
                         if letter_obj["rect"].collidepoint(touch_x, touch_y):
+                            hit_target = True  # Marked as hit
                             if letter_obj["value"] == target_letter:
                                 score += 10
                                 # Common destruction effects
@@ -737,13 +848,13 @@ def game_loop(mode):
 
                                 # Add visual feedback particles
                                 for i in range(20):
-                                    particles.append({
-                                        "x": letter_obj["x"], "y": letter_obj["y"],
-                                        "color": random.choice(FLAME_COLORS),
-                                        "size": random.randint(40, 80),
-                                        "dx": random.uniform(-2, 2), "dy": random.uniform(-2, 2),
-                                        "duration": 20
-                                    })
+                                    create_particle(
+                                        letter_obj["x"], letter_obj["y"],
+                                        random.choice(FLAME_COLORS),
+                                        random.randint(40, 80),
+                                        random.uniform(-2, 2), random.uniform(-2, 2),
+                                        20
+                                    )
 
                                 # Remove letter and update counts
                                 letters.remove(letter_obj)
@@ -767,7 +878,10 @@ def game_loop(mode):
                                 # Optional: Feedback for wrong target touch
                                 shake_duration = 5
                                 shake_magnitude = 3
-
+            
+                    # If no target was hit, add a crack to the screen
+                    if not hit_target and game_started:
+                        handle_misclick(touch_x, touch_y)
 
             if event.type == pygame.FINGERUP:
                 touch_id = event.finger_id
@@ -810,7 +924,13 @@ def game_loop(mode):
             offset_x, offset_y = 0, 0
 
         # Fill background (apply offset if shaking)
-        screen.fill(WHITE) # Draw solid background first
+        if background_shattered:
+            screen.fill(opposite_background)
+        else:
+            screen.fill(current_background)  # Use current_background instead of hardcoded WHITE
+
+        # Draw cracks
+        draw_cracks(screen)
 
         # --- Draw Background Elements (Stars) ---
         for star in stars:
@@ -850,7 +970,8 @@ def game_loop(mode):
             value = target_letter
             size = 500  # adjust size as needed for display
             pos = (player_x + offset_x, player_y + offset_y)
-            outline_color = BLACK # Use black outline for shapes
+            # Determine outline color based on the current background
+            outline_color = BLACK if current_background == WHITE else WHITE
             rect = pygame.Rect(pos[0] - int(size*1.5)//2, pos[1] - size//2, int(size*1.5), size)
             if value == "Rectangle":
                 pygame.draw.rect(screen, outline_color, rect, 8)  # Border only, 1.5:1 aspect
@@ -877,14 +998,14 @@ def game_loop(mode):
             player_font = pygame.font.Font(None, 900)
             display_char = target_letter  # default
 
-            # *** MODIFICATION START: always uppercase in C/L Case centre ***
             if mode == "clcase":
                 display_char = target_letter.upper()
             elif mode == "alphabet" and target_letter == "a":
-                display_char = "α"  # keep Greek alpha only in alphabet mode
-            # *** MODIFICATION END ***
+                display_char = "α"
 
-            player_text = player_font.render(display_char, True, center_target_color)
+            # Use contrasting color for text based on background
+            text_color = BLACK if current_background == WHITE else WHITE
+            player_text = player_font.render(display_char, True, text_color)
             player_rect = player_text.get_rect(center=(player_x + offset_x, player_y + offset_y))
             screen.blit(player_text, player_rect)
 
@@ -932,7 +1053,8 @@ def game_loop(mode):
 
             if mode == "shapes":
                 value = letter_obj["value"]
-                color = BLACK # always draw falling shapes as solid BLACK border
+                # Determine shape color based on the current background
+                color = BLACK if current_background == WHITE else WHITE
                 size = letter_obj["size"]
                 pos = (draw_pos_x, draw_pos_y)
                 if value == "Rectangle":
@@ -956,27 +1078,24 @@ def game_loop(mode):
                     letter_obj["rect"] = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
                     pygame.draw.polygon(screen, color, points, 6)  # Border only
                 elif value == "Pentagon":
-                    cx, cy = pos
-                    r = size // 2
                     points = []
+                    r_size = size // 2
                     for i in range(5):
                         angle = math.radians(72 * i - 90)
-                        points.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
-                    letter_obj["rect"] = pygame.Rect(cx-r, cy-r, size, size)
+                        points.append((pos[0] + r_size * math.cos(angle), pos[1] + r_size * math.sin(angle)))
+                    letter_obj["rect"] = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
                     pygame.draw.polygon(screen, color, points, 6)  # Border only
             else: # Alphabet, Numbers, C/L Case
-                display_value = letter_obj["value"] # Default character to display
+                display_value = letter_obj["value"]
 
-                # *** MODIFICATION START: handle 'a' -> 'α' for falling letters in C/L Case ***
                 if mode == "clcase" and letter_obj["value"] == "a":
                     display_value = "α"
-                # *** MODIFICATION END ***
 
-                # Use gray for non-target letters, black for the target letter
-                text_color = BLACK if letter_obj["value"] == target_letter else (150, 150, 150)
+                # Use contrasting color for text based on background
+                text_color = BLACK if current_background == WHITE else WHITE
                 text_surface = TARGET_FONT.render(display_value, True, text_color)
                 text_rect = text_surface.get_rect(center=(draw_pos_x, draw_pos_y))
-                letter_obj["rect"] = text_rect # Update rect for collision detection
+                letter_obj["rect"] = text_rect
                 screen.blit(text_surface, text_rect)
 
 
@@ -1109,12 +1228,12 @@ def game_loop(mode):
 
                         # Leave trail particles (add to main particle list)
                         if particle["trail"] and random.random() < 0.4:
-                            particles.append({
-                                "x": particle["x"], "y": particle["y"],
-                                "color": particle["color"], "size": particle["size"] / 2,
-                                "dx": -norm_dx * 0.5, "dy": -norm_dy * 0.5,
-                                "duration": 50 # Shorter trail duration
-                            })
+                            create_particle(
+                                particle["x"], particle["y"],
+                                particle["color"], particle["size"] / 2,
+                                -norm_dx * 0.5, -norm_dy * 0.5,
+                                50  # Shorter trail duration
+                            )
 
                         # Draw particle with glow (apply shake offset)
                         draw_x = int(particle["x"] + offset_x)
@@ -1184,6 +1303,16 @@ def game_loop(mode):
                 particle["x"] += particle["dx"]
                 particle["y"] += particle["dy"]
                 particle["duration"] -= 1
+                
+                # Culling optimization: Remove particles that go too far off-screen
+                if (particle["x"] < -PARTICLE_CULLING_DISTANCE or 
+                    particle["x"] > WIDTH + PARTICLE_CULLING_DISTANCE or
+                    particle["y"] < -PARTICLE_CULLING_DISTANCE or 
+                    particle["y"] > HEIGHT + PARTICLE_CULLING_DISTANCE):
+                    particles.remove(particle)
+                    release_particle(particle)
+                    continue
+                
                 # Apply fading effect
                 alpha = max(0, 255 * (particle["duration"] / particle.get("start_duration", 30))) # Fade out
                 color = (*particle["color"][:3], int(alpha))
@@ -1198,6 +1327,7 @@ def game_loop(mode):
 
             else:
                 particles.remove(particle)
+                release_particle(particle)  # Return to pool
 
         # --- Display HUD Info ---
         if mode != "colors":
@@ -1227,7 +1357,12 @@ def game_loop(mode):
                     running = False # Exit game loop to return to menu
                     break
                 else:
-                    game_started = True # Resume game if continuing
+                    # If continue was pressed
+                    if mode == "colors" and shapes_completed:
+                        running = False  # Signal to restart colors level
+                        break
+                    else:
+                        running = False  # Exit to menu for other level types
             else:
                 checkpoint_delay_frames -= 1
 
@@ -1270,109 +1405,37 @@ def game_loop(mode):
                 last_checkpoint_triggered = overall_destroyed // 10 # Update checkpoint trigger base
 
             else:
-                # --- All Groups Completed ---
-                # Ensure final count matches total expected
-                if total_destroyed >= TOTAL_LETTERS:
-                    if well_done_screen(score): # If well_done returns True (clicked next mission)
-                        running = False # Exit game loop to go back to menu
-                        break
-                    else: # Should not happen if well_done forces click
-                        running = False
-                        break
+                # --- All Groups Completed (Level Finished) ---
+                # Show checkpoint screen instead of well_done for all completed levels
+                pygame.time.delay(500)  # Brief delay like in colors level
+                checkpoint_waiting = True
+                checkpoint_delay_frames = 60  # Wait ~1 second for animations
+                
+                if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
+                    if not checkpoint_screen():  # If checkpoint returns False (chose Menu)
+                        running = False  # Exit game loop to return to menu
+                    else:
+                        # For shapes level, continue should return to menu
+                        running = False  # Exit to menu for non-colors levels
                 else:
-                    # This case might indicate an issue if not all letters were destroyed
-                    print(f"Warning: Game ended but total destroyed ({total_destroyed}) doesn't match total letters ({TOTAL_LETTERS}).")
-                    running = False # End game loop
-                    break
+                    checkpoint_delay_frames -= 1
+                
+                # Exit the loop immediately to prevent counter issues
+                break
+
+    # If the player completes the shapes level, mark it as completed
+    if mode == "shapes" and just_completed_level:
+        try:
+            with open("level_progress.txt", "w") as f:
+                f.write("shapes_completed")
+        except:
+            # If we can't write to the file, just continue
+            pass
 
     # --- End of Main Game Loop ---
     # Return True if we exited to go back to the menu (e.g., from checkpoint or well_done)
     # Return False if we exited via ESC or Quit event
     return True if running == False else False # A bit confusing, revise this return logic if needed
-
-
-###############################################################################
-#                          SUPPORT FUNCTIONS                                  #
-###############################################################################
-
-def create_flame_effect(start_x, start_y, end_x, end_y):
-    """Creates a laser/flame visual effect between two points."""
-    global lasers
-    # Always use flamethrower effect for now
-    effect = LASER_EFFECTS[0] # Force flamethrower
-    # effect = random.choice(LASER_EFFECTS) # Or choose randomly
-    lasers.append({
-        "start_pos": (start_x, start_y),
-        "end_pos": (end_x, end_y),
-        "colors": effect["colors"],
-        "widths": effect["widths"], # Used by draw_flamethrower indirectly
-        "duration": 10, # Short duration visual effect
-        "type": effect["type"],
-    })
-
-def draw_flamethrower(laser, offset_x=0, offset_y=0):
-    """Draws a flamethrower style effect using circles along a line."""
-    start_x, start_y = laser["start_pos"]
-    end_x, end_y = laser["end_pos"]
-    dx = end_x - start_x
-    dy = end_y - start_y
-    length = math.hypot(dx, dy)
-    if length == 0: return # Avoid division by zero
-
-    angle = math.atan2(dy, dx)
-    num_circles = int(length / 10) # Draw a circle every 10 pixels
-
-    for i in range(num_circles):
-        # Interpolate position along the line
-        ratio = i / num_circles
-        x = start_x + dx * ratio
-        y = start_y + dy * ratio
-        # Vary radius and color for flame effect
-        radius = random.randint(20, 40 + int(20 * (1-ratio))) # Wider near start
-        color = random.choice(laser["colors"])
-        # Apply shake offset
-        draw_x = int(x + offset_x)
-        draw_y = int(y + offset_y)
-        # Draw with alpha for softer edges (optional)
-        flame_surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
-        pygame.draw.circle(flame_surf, (*color, 180), (radius, radius), radius)
-        screen.blit(flame_surf, (draw_x - radius, draw_y - radius))
-        # pygame.draw.circle(screen, color, (draw_x, draw_y), radius)
-
-
-def create_explosion(x, y, color=None, max_radius=270, duration=30):
-    """Adds an explosion effect to the list."""
-    global shake_duration, explosions
-    if color is None:
-        color = random.choice(FLAME_COLORS)
-    explosions.append({
-        "x": x,
-        "y": y,
-        "radius": 10, # Start small
-        "color": color,
-        "max_radius": max_radius,
-        "duration": duration,
-        "start_duration": duration # Store initial duration for fading
-    })
-    shake_duration = max(shake_duration, 10) # Trigger screen shake, don't override longer shakes
-
-def draw_explosion(explosion, offset_x=0, offset_y=0):
-    """Draws a single explosion frame, expanding and fading."""
-    # Expand radius towards max_radius
-    explosion["radius"] += (explosion["max_radius"] - explosion["radius"]) * 0.1 # Smoother expansion
-    # Calculate alpha based on remaining duration
-    alpha = max(0, int(255 * (explosion["duration"] / explosion["start_duration"])))
-    color = (*explosion["color"][:3], alpha) # Add alpha to color
-    radius = int(explosion["radius"])
-    # Apply shake offset
-    draw_x = int(explosion["x"] + offset_x)
-    draw_y = int(explosion["y"] + offset_y)
-
-    # Draw using SRCALPHA surface for transparency
-    if radius > 0:
-        explosion_surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
-        pygame.draw.circle(explosion_surf, color, (radius, radius), radius)
-        screen.blit(explosion_surf, (draw_x - radius, draw_y - radius))
 
 
 def create_aoe(x, y, letters, target_letter):
@@ -1397,28 +1460,28 @@ def create_aoe(x, y, letters, target_letter):
 
 def display_info(score, ability, target_letter, overall_destroyed, total_letters, mode):
     """Displays the HUD elements (Score, Ability, Target, Progress)."""
+    # Determine text color based on background
+    text_color = BLACK if current_background == WHITE else WHITE
+    
     # Left-aligned elements
-    score_text = small_font.render(f"Score: {score}", True, BLACK)
+    score_text = small_font.render(f"Score: {score}", True, text_color)
     screen.blit(score_text, (20, 20))
-    ability_text = small_font.render(f"Ability: {ability.capitalize()}", True, BLACK)
+    ability_text = small_font.render(f"Ability: {ability.capitalize()}", True, text_color)
     ability_rect = ability_text.get_rect(topleft=(20, 60))
     screen.blit(ability_text, ability_rect)
 
     # Right-aligned elements
     display_target = target_letter
-    # *** MODIFICATION START: handle 'a' -> 'α' in HUD Target display ***
     if (mode == "alphabet" or mode == "clcase") and target_letter == "a":
-         display_target = "α"
-    # *** MODIFICATION END ***
+        display_target = "α"
     elif mode == "clcase":
-        # Show uppercase in HUD for C/L case target
         display_target = target_letter.upper()
 
-    target_text = small_font.render(f"Target: {display_target}", True, BLACK)
+    target_text = small_font.render(f"Target: {display_target}", True, text_color)
     target_rect = target_text.get_rect(topright=(WIDTH - 20, 20))
     screen.blit(target_text, target_rect)
 
-    progress_text = small_font.render(f"Destroyed: {overall_destroyed}/{total_letters}", True, BLACK)
+    progress_text = small_font.render(f"Destroyed: {overall_destroyed}/{total_letters}", True, text_color)
     progress_rect = progress_text.get_rect(topright=(WIDTH - 20, 60))
     screen.blit(progress_text, progress_rect)
 
@@ -1521,7 +1584,7 @@ def checkpoint_screen():
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
                 if continue_rect.collidepoint(mx, my):
-                    return True  # Continue game
+                    return True  # Continue game or restart colors level
                 elif menu_rect.collidepoint(mx, my):
                     return False  # Return to level menu
 
@@ -1556,7 +1619,7 @@ def checkpoint_screen():
         screen.blit(checkpoint_text, checkpoint_rect)
 
         # Additional message
-        subtext = small_font.render("10 targets destroyed!", True, WHITE)
+        subtext = small_font.render("Well done! You've completed this task!", True, WHITE)
         subtext_rect = subtext.get_rect(center=(center_x, center_y - 100))
         screen.blit(subtext, subtext_rect)
 
@@ -1576,16 +1639,15 @@ def create_player_trail(x, y):
     """Creates trail particles behind the (currently static) player position."""
     # This might be less useful if the player doesn't move, but kept for potential future use.
     for _ in range(1): # Reduce particle count for static player
-        particles.append({
-            "x": x + random.uniform(-10, 10), # Spawn around center
-            "y": y + random.uniform(-10, 10),
-            "color": random.choice(FLAME_COLORS),
-            "size": random.randint(2, 4),
-            "dx": random.uniform(-0.2, 0.2), # Slow drift
-            "dy": random.uniform(-0.2, 0.2),
-            "duration": 20, # Shorter duration
-            "start_duration": 20
-        })
+        create_particle(
+            x + random.uniform(-10, 10),  # Spawn around center
+            y + random.uniform(-10, 10),
+            random.choice(FLAME_COLORS),
+            random.randint(2, 4),
+            random.uniform(-0.2, 0.2),  # Slow drift
+            random.uniform(-0.2, 0.2),
+            20  # Shorter duration
+        )
 
 # Restore charge particle count for charge-up effect
 def start_charge_up_effect(player_x, player_y, target_x, target_y):
@@ -1627,6 +1689,9 @@ def start_charge_up_effect(player_x, player_y, target_x, target_y):
 def create_swirl_particles(center_x, center_y, radius=150, count=50):  # Restore to 50
     global swirl_particles
     swirl_particles = [] # Clear existing ones
+
+    # Limit count to MAX_SWIRL_PARTICLES
+    count = min(count, MAX_SWIRL_PARTICLES)
 
     for _ in range(count):
         angle = random.uniform(0, 2 * math.pi)
@@ -1718,16 +1783,15 @@ def update_swirl_particles(center_x, center_y):
             # Create mini-explosion effect at convergence point
             for _ in range(3): # Fewer particles per mini-explosion
                 explosion_color = particle["color"]
-                particles.append({ # Add to main particle list
-                    "x": target_x + random.uniform(-5, 5), # Slight spread
-                    "y": target_y + random.uniform(-5, 5),
-                    "color": explosion_color,
-                    "size": random.uniform(8, 16), # Smaller explosion particles
-                    "dx": random.uniform(-1.5, 1.5),
-                    "dy": random.uniform(-1.5, 1.5),
-                    "duration": random.randint(20, 40),
-                    "start_duration": 40
-                })
+                create_particle(
+                    target_x + random.uniform(-5, 5),  # Slight spread
+                    target_y + random.uniform(-5, 5),
+                    explosion_color,
+                    random.uniform(8, 16),  # Smaller explosion particles
+                    random.uniform(-1.5, 1.5),
+                    random.uniform(-1.5, 1.5),
+                    random.randint(20, 40)
+                )
 
         # Add a small shockwave effect once when particles hit
         if random.random() < 0.5: # Chance to add shockwave
@@ -1768,29 +1832,298 @@ def trigger_particle_convergence(target_x, target_y):
         #             "duration": 15, "start_duration": 15
         #         })
 
+def get_particle_from_pool():
+    """Get an inactive particle from the pool or create a new one if needed."""
+    global particle_pool
+    
+    # Try to find an inactive particle in the pool
+    for particle in particle_pool:
+        if not particle["active"]:
+            particle["active"] = True
+            return particle
+    
+    # If no inactive particles, create a new one and add to pool
+    new_particle = {
+        "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
+        "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
+        "active": True
+    }
+    particle_pool.append(new_particle)
+    return new_particle
 
-###############################################################################
-#                                MAIN                                       #
-###############################################################################
+def release_particle(particle):
+    """Return a particle to the pool (mark as inactive)."""
+    particle["active"] = False
+
+def create_particle(x, y, color, size, dx, dy, duration):
+    """Create a particle using the particle pool system."""
+    global particles
+    
+    # Limit number of particles for performance
+    if len(particles) >= MAX_PARTICLES:
+        # If we've hit the limit, don't add more particles
+        return None
+    
+    # Get a particle from the pool
+    particle = get_particle_from_pool()
+    
+    # Set properties
+    particle["x"] = x
+    particle["y"] = y
+    particle["color"] = color
+    particle["size"] = size
+    particle["dx"] = dx
+    particle["dy"] = dy
+    particle["duration"] = duration
+    particle["start_duration"] = duration
+    
+    # Add to active particles
+    particles.append(particle)
+    return particle
+
+def create_crack(x, y):
+    """Creates a crack effect at the given position."""
+    global glass_cracks, background_shattered, shatter_timer, opposite_background, current_background
+    
+    # Create a new crack with random properties
+    segments = random.randint(4, 8)  # Number of line segments in the crack
+    length = random.randint(40, 80)  # Length of each segment
+    spread_angle = random.uniform(10, 40)  # Max deviation angle between segments
+    
+    # Start with a random direction
+    main_angle = random.uniform(0, 360)
+    
+    # Generate crack segments
+    points = [(x, y)]  # Start point
+    current_angle = main_angle
+    
+    for _ in range(segments):
+        # Vary the angle slightly
+        angle_variation = random.uniform(-spread_angle, spread_angle)
+        current_angle += angle_variation
+        
+        # Calculate next point
+        rad_angle = math.radians(current_angle)
+        segment_length = random.uniform(0.7, 1.3) * length
+        next_x = points[-1][0] + math.cos(rad_angle) * segment_length
+        next_y = points[-1][1] + math.sin(rad_angle) * segment_length
+        
+        points.append((next_x, next_y))
+    
+    # Add thin branches occasionally
+    if random.random() < 0.7:  # 70% chance to add branches
+        num_branches = random.randint(1, 3)
+        branch_points = []
+        
+        for _ in range(num_branches):
+            # Pick a random segment to branch from
+            branch_from = random.randint(0, len(points) - 2)
+            branch_angle = current_angle + random.uniform(30, 150)  # Significant deviation
+            
+            # Create branch segments
+            branch_segments = random.randint(2, 4)
+            branch_points.append([points[branch_from]])  # Start point
+            current_branch_angle = branch_angle
+            
+            for _ in range(branch_segments):
+                angle_variation = random.uniform(-spread_angle, spread_angle)
+                current_branch_angle += angle_variation
+                
+                rad_angle = math.radians(current_branch_angle)
+                segment_length = random.uniform(0.4, 0.7) * length  # Branches are shorter
+                next_x = branch_points[-1][-1][0] + math.cos(rad_angle) * segment_length
+                next_y = branch_points[-1][-1][1] + math.sin(rad_angle) * segment_length
+                
+                branch_points[-1].append((next_x, next_y))
+    else:
+        branch_points = []
+    
+    # Determine the effective background and crack color for drawing
+    effective_background = opposite_background if background_shattered else current_background
+    draw_crack_color = WHITE if effective_background == BLACK else BLACK
+    
+    # Add the crack
+    glass_cracks.append({
+        "points": points,
+        "branches": branch_points,
+        "width": random.uniform(1, 3),  # Line width
+        "alpha": 200,  # Starting opacity
+        "color": draw_crack_color
+    })
+    
+    # Check if we've reached the maximum number of cracks to shatter
+    if len(glass_cracks) >= MAX_CRACKS:
+        # Swap backgrounds
+        background_shattered = True
+        shatter_timer = CRACK_DURATION
+        
+        # Swap current and opposite backgrounds
+        current_background, opposite_background = opposite_background, current_background
+        
+        # --- Reset cracks immediately to require MAX_CRACKS for next shatter ---
+        glass_cracks = [] # Reset the list here
+        
+        # Create shatter particles but keep the cracks (now reset)
+        shatter_count = 100
+        for _ in range(shatter_count):
+            # Create glass particle
+            angle = random.uniform(0, math.pi * 2)
+            speed = random.uniform(2, 10)
+            create_particle(
+                WIDTH/2 + random.uniform(-WIDTH/3, WIDTH/3),  # Spread across screen
+                HEIGHT/2 + random.uniform(-HEIGHT/3, HEIGHT/3),
+                (200, 200, 200),  # Glass color
+                random.uniform(5, 15),  # Size
+                math.cos(angle) * speed,  # X velocity
+                math.sin(angle) * speed,  # Y velocity
+                random.randint(30, 90)  # Duration
+            )
+
+def draw_cracks(surface):
+    """Draws all cracks on the surface."""
+    global glass_cracks, background_shattered, shatter_timer, opposite_background, current_background
+    
+    # If screen is shattered, count down the timer
+    if background_shattered:
+        # Fill with opposite background color
+        surface.fill(opposite_background)
+        
+        # Decrease timer
+        shatter_timer -= 1
+        if shatter_timer <= 0:
+            # Reset shattered state but keep cracks (cracks are reset in create_crack)
+            background_shattered = False
+            
+            # Switch the background colors
+            current_background, opposite_background = opposite_background, current_background
+            
+            # # If we have enough cracks, clear them to start fresh (REMOVED - Handled in create_crack)
+            # if len(glass_cracks) >= MAX_CRACKS:
+            #     glass_cracks = []
+    
+    # Determine the effective background and crack color for drawing
+    effective_background = opposite_background if background_shattered else current_background
+    draw_crack_color = WHITE if effective_background == BLACK else BLACK
+    
+    # Draw all cracks
+    for crack in glass_cracks:
+        # Draw main segments
+        for i in range(len(crack["points"]) - 1):
+            pygame.draw.line(
+                surface, 
+                draw_crack_color, # Use dynamic color
+                crack["points"][i], 
+                crack["points"][i+1], 
+                int(crack["width"])
+            )
+        
+        # Draw branches
+        for branch in crack["branches"]:
+            for i in range(len(branch) - 1):
+                pygame.draw.line(
+                    surface, 
+                    draw_crack_color, # Use dynamic color
+                    branch[i], 
+                    branch[i+1], 
+                    int(crack["width"] * 0.7)  # Branches are thinner
+                )
+
+def create_explosion(x, y, color=None, max_radius=270, duration=30):
+    """Adds an explosion effect to the list, with a limit for performance."""
+    global shake_duration, explosions
+    
+    # Limit number of explosions for performance
+    if len(explosions) >= MAX_EXPLOSIONS:
+        # If we've reached the limit, replace the oldest explosion
+        oldest_explosion = min(explosions, key=lambda exp: exp["duration"])
+        explosions.remove(oldest_explosion)
+    
+    if color is None:
+        color = random.choice(FLAME_COLORS)
+        
+    explosions.append({
+        "x": x,
+        "y": y,
+        "radius": 10, # Start small
+        "color": color,
+        "max_radius": max_radius,
+        "duration": duration,
+        "start_duration": duration # Store initial duration for fading
+    })
+    
+    shake_duration = max(shake_duration, 10) # Trigger screen shake, don't override longer shakes
+
+def handle_misclick(x, y):
+    """Handle a click that wasn't on a valid target."""
+    global shake_duration, shake_magnitude
+    shake_duration = 5
+    shake_magnitude = 3
+    create_crack(x, y)
+
+def draw_explosion(explosion, offset_x=0, offset_y=0):
+    """Draws a single explosion frame, expanding and fading."""
+    # Expand radius towards max_radius
+    explosion["radius"] += (explosion["max_radius"] - explosion["radius"]) * 0.1 # Smoother expansion
+    # Calculate alpha based on remaining duration
+    alpha = max(0, int(255 * (explosion["duration"] / explosion["start_duration"])))
+    color = (*explosion["color"][:3], alpha) # Add alpha to color
+    radius = int(explosion["radius"])
+    # Apply shake offset
+    draw_x = int(explosion["x"] + offset_x)
+    draw_y = int(explosion["y"] + offset_y)
+
+    # Draw using SRCALPHA surface for transparency
+    if radius > 0:
+        explosion_surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+        pygame.draw.circle(explosion_surf, color, (radius, radius), radius)
+        screen.blit(explosion_surf, (draw_x - radius, draw_y - radius))
+
+def create_flame_effect(start_x, start_y, end_x, end_y):
+    """Creates a laser/flame visual effect between two points."""
+    global lasers
+    # Always use flamethrower effect for now
+    effect = LASER_EFFECTS[0] # Force flamethrower
+    lasers.append({
+        "start_pos": (start_x, start_y),
+        "end_pos": (end_x, end_y),
+        "colors": effect["colors"],
+        "widths": effect["widths"], # Used by draw_flamethrower indirectly
+        "duration": 10, # Short duration visual effect
+        "type": effect["type"],
+    })
+
+def draw_flamethrower(laser, offset_x=0, offset_y=0):
+    """Draws a flamethrower style effect using circles along a line."""
+    start_x, start_y = laser["start_pos"]
+    end_x, end_y = laser["end_pos"]
+    dx = end_x - start_x
+    dy = end_y - start_y
+    length = math.hypot(dx, dy)
+    if length == 0: return # Avoid division by zero
+
+    angle = math.atan2(dy, dx)
+    num_circles = int(length / 10) # Draw a circle every 10 pixels
+
+    for i in range(num_circles):
+        # Interpolate position along the line
+        ratio = i / num_circles
+        x = start_x + dx * ratio
+        y = start_y + dy * ratio
+        # Vary radius and color for flame effect
+        radius = random.randint(20, 40 + int(20 * (1-ratio))) # Wider near start
+        color = random.choice(laser["colors"])
+        # Apply shake offset
+        draw_x = int(x + offset_x)
+        draw_y = int(y + offset_y)
+        # Draw with alpha for softer edges (optional)
+        flame_surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+        pygame.draw.circle(flame_surf, (*color, 180), (radius, radius), radius)
+        screen.blit(flame_surf, (draw_x - radius, draw_y - radius))
 
 if __name__ == "__main__":
-    try:
-        while True:
-            welcome_screen()
-            mode = level_menu()
-            if mode:  # Check if a valid mode was selected
-                # Keep looping the game for the selected mode until user chooses 'Menu'
-                # from checkpoint or finishes the level set.
-                while game_loop(mode):
-                    # If game_loop returns True, it means user chose 'Menu' or finished.
-                    # We break this inner loop to go back to the level_menu().
-                    break
-            else:
-                # If level_menu returns None (e.g., user closed window during menu)
-                break # Exit the main application loop
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        import traceback
-        traceback.print_exc() # Print detailed traceback
-    finally:
-        pygame.quit() 
+    welcome_screen()
+    while True:
+        mode = level_menu()
+        if mode is None:
+            break
+        game_loop(mode)
