@@ -292,3 +292,56 @@ This enhancement improves gameplay by:
 - Better player experience, especially for younger players
 - Reduced difficulty without changing game appearance
 - More forgiving gameplay with the same visual challenge
+
+## 2024-06-09: Enhanced Welcome Screen Animations
+
+* Converted static welcome screen to dynamic animated screen:
+  * Added orbiting particle system with pulsing size effect
+  * Implemented smooth color transitions for the title
+  * Added subtle floating animation to title and creator text
+  * Enhanced button interactions with hover effects and glow intensity
+  * Added responsive highlighting for auto-detected display mode
+  * Implemented proper delta-time based animations for consistent experience across different hardware
+  * Added FPS capping to 60 for performance optimization
+
+## 2024-06-09: Fixed Welcome Screen Color Format Issue
+
+* Fixed invalid color argument error in button glow effects:
+  * Replaced RGBA color format with RGB format
+  * Implemented alpha factor to simulate transparency in glow gradients
+  * Maintained visual quality while ensuring compatibility with pygame's drawing functions
+
+## 2024-06-09: Fixed Event Queue Processing in Welcome Screen
+
+* Diagnosed and fixed issue with escape key not working:
+  * Problem: Multiple calls to pygame.event.get() in the same frame were clearing the event queue
+  * The mouse position detection and event handling were competing for events
+  * Solution: Store all events in a local variable at the start of each frame and use this for processing
+  * Fixed key responsiveness while maintaining smooth animations and hover effects
+
+* Identified potential code vulnerabilities:
+  1. Event queue processing vulnerability: Multiple pygame.event.get() calls were clearing the queue
+  2. Unnecessary computation: Hover state detection could be handled inside the event loop
+  3. Potential for missed input events between frames
+
+* Key learnings from diagnostics:
+  1. Always collect pygame.event.get() once per frame and store the result
+  2. Process all input types from the same event collection
+  3. Handle hover states efficiently by utilizing the same event collection
+
+## 2024-06-09: Standardized Escape Key Behavior Across Game
+
+* Fixed inconsistent escape key behavior:
+  * Problem: Escape key was exiting to level menu in game levels but exiting the application in other screens
+  * This created user confusion and frustration when playing through multiple levels
+  * Solution: Standardized escape key to always exit the application completely in all game states
+  
+* Technical implementation:
+  * Modified the escape key handler in the game_loop function to call pygame.quit() and exit() directly
+  * This ensures consistent behavior with the welcome_screen and level_menu functions
+  * Eliminated unexpected return to level menu when users expected to exit the application
+
+* Improved user experience:
+  * Users now have a reliable way to exit the application from any point in the game
+  * Removed unexpected level reset behavior that was causing frustration
+  * Maintained all visual enhancements while providing more intuitive controls

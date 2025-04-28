@@ -205,11 +205,11 @@ def welcome_screen():
         (0, 128, 255)    # Bright blue
     ]
     
-    # Create dynamic gravitational particles that orbit around the title
+    # Create dynamic gravitational particles
     particles = []
     for _ in range(120):
         angle = random.uniform(0, math.pi * 2)
-        distance = random.uniform(200, max(WIDTH, HEIGHT) * 0.4)
+        distance = random.uniform(200, max(WIDTH, HEIGHT))
         x = WIDTH // 2 + math.cos(angle) * distance
         y = HEIGHT // 2 + math.sin(angle) * distance
         size = random.randint(int(9 * scale_factor), int(15 * scale_factor))
@@ -219,59 +219,65 @@ def welcome_screen():
             "color": random.choice(particle_colors),
             "size": size,
             "orig_size": size,
-            "angle": angle,
-            "orbit_speed": random.uniform(0.0005, 0.002),
-            "orbit_distance": distance,
+            "angle": random.uniform(0, math.pi * 2),
+            "speed": random.uniform(0.1, 0.5),
             "pulse_speed": random.uniform(0.02, 0.06),
             "pulse_factor": random.random()
         })
-    
-    # Button hover state tracking
+
+    # Button hover state and animation
     default_hover = False
     qboard_hover = False
+    
+    # Title animation parameters
+    title_scale = 1.0
+    title_scale_direction = 0.001
+    title_colors = FLAME_COLORS.copy()
+    current_color_idx = 0
+    next_color_idx = 1
+    color_transition = 0.0
+    
+    # Use scaled font size for title based on current display
+    title_font_size = int(320 * scale_factor)  # Default title size times scale factor
+    title_font = pygame.font.Font(None, title_font_size)
+    
+    # Create title rect for animation (we'll reuse this)
+    title_text = "Super Student"
+    title_rect_center = (WIDTH // 2, HEIGHT // 2 - title_offset)
+
+    # Instructions
+    display_text = small_font.render("Choose Display Size:", True, (255, 255, 255))
+    display_rect = display_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + instruction_y_pos))
     
     # Create buttons for display size options
     default_button = pygame.Rect((WIDTH // 2 - button_width - button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
     qboard_button = pygame.Rect((WIDTH // 2 + button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
     
-    # Set up smooth color transition variables for the title
-    color_transition = 0.0
-    color_transition_speed = 0.01
-    current_color = random.choice(FLAME_COLORS)
-    next_color = random.choice(FLAME_COLORS)
+    # Auto-detected mode text
+    auto_text = small_font.render(f"Auto-detected: {detect_display_type()}", True, (200, 200, 200))
+    auto_rect = auto_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + button_y_pos + button_height + 30))
     
     # Scale collaboration font based on display size
     collab_font_size = int(100 * scale_factor)
     collab_font = pygame.font.Font(None, collab_font_size)
     
-    # Use scaled font size for title based on current display
-    title_font_size = int(320 * scale_factor)
-    title_font = pygame.font.Font(None, title_font_size)
+    sangsom_pulse = 0
+    sangsom_pulse_dir = 0.02
     
-    # For title floating effect
-    title_offset_y = 0
-    title_float_speed = 0.002
-    title_float_direction = 1
+    # For swirl effect around title
+    swirl_particles = []
+    swirl_angle = 0
     
-    # Get the auto-detected display type
-    detected_display = detect_display_type()
-    
-    # --- Main welcome screen loop with animations ---
+    # --- Main welcome screen loop ---
     running = True
     clock = pygame.time.Clock()
-    last_time = pygame.time.get_ticks()
-    
     while running:
-        # Calculate delta time for smooth animations regardless of FPS
-        current_time = pygame.time.get_ticks()
-        delta_time = (current_time - last_time) / 1000.0  # Convert to seconds
-        last_time = current_time
-        
-        # Clear events at the start of each frame - collect all events first
-        events = pygame.event.get()
-        
         # Handle events
-        for event in events:
+        mx, my = pygame.mouse.get_pos()
+        default_hover = default_button.collidepoint(mx, my)
+        qboard_hover = qboard_button.collidepoint(mx, my)
+        
+        for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
@@ -279,190 +285,231 @@ def welcome_screen():
                 pygame.quit()
                 exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = pygame.mouse.get_pos()
                 if default_button.collidepoint(mx, my):
+                    # Create click particles
+                    for _ in range(15):
+                        create_particle(
+                            mx, my, 
+                            random.choice([(0, 200, 255), (100, 230, 255)]), 
+                            random.randint(5, 12),
+                            random.uniform(-3, 3), 
+                            random.uniform(-3, 3),
+                            20
+                        )
                     DISPLAY_MODE = "DEFAULT"
                     init_resources()
                     running = False
                 elif qboard_button.collidepoint(mx, my):
+                    # Create click particles
+                    for _ in range(15):
+                        create_particle(
+                            mx, my, 
+                            random.choice([(255, 0, 150), (255, 100, 180)]), 
+                            random.randint(5, 12),
+                            random.uniform(-3, 3), 
+                            random.uniform(-3, 3),
+                            20
+                        )
                     DISPLAY_MODE = "QBOARD"
                     init_resources()
                     running = False
         
-        # Get mouse position for hover effects
-        mx, my = pygame.mouse.get_pos()
-        default_hover = default_button.collidepoint(mx, my)
-        qboard_hover = qboard_button.collidepoint(mx, my)
-        
-        # Update color transition
-        color_transition += color_transition_speed * delta_time * 60
-        if color_transition >= 1.0:
-            color_transition = 0.0
-            current_color = next_color
-            next_color = random.choice([c for c in FLAME_COLORS if c != current_color])
-        
-        # Calculate interpolated title color
-        r = int(current_color[0] * (1 - color_transition) + next_color[0] * color_transition)
-        g = int(current_color[1] * (1 - color_transition) + next_color[1] * color_transition)
-        b = int(current_color[2] * (1 - color_transition) + next_color[2] * color_transition)
-        title_color = (r, g, b)
-        
-        # Update title floating effect
-        title_offset_y += title_float_direction * title_float_speed * delta_time * 60
-        if abs(title_offset_y) > 10:
-            title_float_direction *= -1
-        
-        # Update particles
-        for particle in particles:
-            # Orbital movement
-            particle["angle"] += particle["orbit_speed"] * delta_time * 60
-            particle["x"] = WIDTH // 2 + math.cos(particle["angle"]) * particle["orbit_distance"]
-            particle["y"] = HEIGHT // 2 + math.sin(particle["angle"]) * particle["orbit_distance"]
-            
-            # Pulsing effect
-            particle["pulse_factor"] += particle["pulse_speed"] * delta_time * 60
-            if particle["pulse_factor"] > 1.0:
-                particle["pulse_factor"] = 0.0
-            pulse = 0.7 + 0.3 * math.sin(particle["pulse_factor"] * math.pi * 2)
-            particle["size"] = particle["orig_size"] * pulse
-        
-        # Draw everything
+        # Clear screen
         screen.fill(BLACK)
         
-        # Draw orbiting particles
+        # Update and draw particles
         for particle in particles:
-            pygame.draw.circle(screen, particle["color"],
-                             (int(particle["x"]), int(particle["y"])),
-                             int(particle["size"]))
+            # Orbital movement
+            particle["angle"] += particle["speed"] * 0.01
+            
+            # Pulse size
+            particle["pulse_factor"] += particle["pulse_speed"]
+            if particle["pulse_factor"] > 1.0:
+                particle["pulse_factor"] = 0.0
+            
+            pulse = math.sin(particle["pulse_factor"] * math.pi * 2) * 0.3 + 0.7
+            current_size = particle["orig_size"] * pulse
+            
+            # Calculate position with slight orbital movement
+            orbit_radius = math.sin(particle["angle"]) * 20
+            x = particle["x"] + math.cos(particle["angle"]) * orbit_radius
+            y = particle["y"] + math.sin(particle["angle"]) * orbit_radius
+            
+            pygame.draw.circle(screen, particle["color"], (int(x), int(y)), max(1, int(current_size)))
         
-        # Calculate title position with float effect
-        title_rect_center = (WIDTH // 2, HEIGHT // 2 - title_offset + title_offset_y)
+        # Update swirl effect
+        swirl_angle += 0.02
+        if random.random() < 0.1 and len(swirl_particles) < 30:
+            radius = random.uniform(100, 200) * scale_factor
+            angle = random.uniform(0, math.pi * 2)
+            swirl_particles.append({
+                "radius": radius,
+                "angle": angle,
+                "speed": random.uniform(0.01, 0.03),
+                "color": random.choice(particle_colors),
+                "size": random.randint(4, 8),
+                "life": random.randint(50, 150)
+            })
         
-        # Draw title with depth/glow effect
-        title_text = "Super Student"
-        shadow_color = (20, 20, 20)
-        for depth in range(1, 0, -1):
-            shadow = title_font.render(title_text, True, shadow_color)
-            shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
+        # Update and draw swirl particles
+        for i, p in enumerate(swirl_particles):
+            p["angle"] += p["speed"]
+            p["life"] -= 1
+            
+            x = title_rect_center[0] + math.cos(p["angle"]) * p["radius"]
+            y = title_rect_center[1] + math.sin(p["angle"]) * p["radius"]
+            
+            alpha = min(255, p["life"] * 2)
+            color = (p["color"][0], p["color"][1], p["color"][2])
+            
+            pygame.draw.circle(screen, color, (int(x), int(y)), p["size"])
+            
+            # Remove dead particles
+            if p["life"] <= 0:
+                swirl_particles[i] = None
+        
+        swirl_particles = [p for p in swirl_particles if p is not None]
+        
+        # Title color transition animation
+        color_transition += 0.005
+        if color_transition >= 1.0:
+            color_transition = 0.0
+            current_color_idx = next_color_idx
+            next_color_idx = (next_color_idx + 1) % len(title_colors)
+        
+        # Blend between current and next color
+        r = int(title_colors[current_color_idx][0] * (1 - color_transition) + title_colors[next_color_idx][0] * color_transition)
+        g = int(title_colors[current_color_idx][1] * (1 - color_transition) + title_colors[next_color_idx][1] * color_transition)
+        b = int(title_colors[current_color_idx][2] * (1 - color_transition) + title_colors[next_color_idx][2] * color_transition)
+        title_color = (r, g, b)
+        
+        # Remove title breathing animation
+        # Draw title with depth/glow effect with updated color
+    shadow_color = (20, 20, 20)
+    for depth in range(1, 0, -1):
+        shadow = title_font.render(title_text, True, shadow_color)
+        shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
             screen.blit(shadow, shadow_rect)
         
-        # Add dynamic glow based on title color
-        glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
-        for i, glow_color in enumerate(glow_colors):
-            glow = title_font.render(title_text, True, glow_color)
-            offset = i + 1
-            for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
-                glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
-                screen.blit(glow, glow_rect)
+    glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
+    for i, glow_color in enumerate(glow_colors):
+        glow = title_font.render(title_text, True, glow_color)
+        offset = i + 1
+        for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
+            glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
+            screen.blit(glow, glow_rect)
+            
+    highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
+    shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
+    mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
         
-        # Create the 3D effect with highlight and shadow
-        highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
-        shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
-        mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
+    highlight = title_font.render(title_text, True, highlight_color)
+    highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
+    screen.blit(highlight, highlight_rect)
         
-        highlight = title_font.render(title_text, True, highlight_color)
-        highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
-        screen.blit(highlight, highlight_rect)
+    mid_tone = title_font.render(title_text, True, mid_color)
+    mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
+    screen.blit(mid_tone, mid_rect)
         
-        mid_tone = title_font.render(title_text, True, mid_color)
-        mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
-        screen.blit(mid_tone, mid_rect)
+    inner_shadow = title_font.render(title_text, True, shadow_color)
+    inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
+            screen.blit(inner_shadow, inner_shadow_rect)
         
-        inner_shadow = title_font.render(title_text, True, shadow_color)
-        inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
-        screen.blit(inner_shadow, inner_shadow_rect)
+    title = title_font.render(title_text, True, title_color)
+    title_rect = title.get_rect(center=title_rect_center)
+    screen.blit(title, title_rect)
         
-        title = title_font.render(title_text, True, title_color)
-        title_rect = title.get_rect(center=title_rect_center)
-        screen.blit(title, title_rect)
-        
-        # Instructions
-        display_text = small_font.render("Choose Display Size:", True, (255, 255, 255))
-        display_rect = display_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + instruction_y_pos))
+    # Draw instructions
         screen.blit(display_text, display_rect)
         
-        # Draw default button with hover effect
-        pygame.draw.rect(screen, (20, 20, 20), default_button)
+    # Draw buttons with hover effects
+    # Default button
+        hover_expansion = 3 if default_hover else 0
+        hover_button = pygame.Rect(
+            default_button.x - hover_expansion, 
+            default_button.y - hover_expansion, 
+            default_button.width + hover_expansion*2, 
+            default_button.height + hover_expansion*2
+        )
+        pygame.draw.rect(screen, (20, 20, 20), hover_button)
         glow_intensity = 6 if default_hover else 5
         for i in range(1, glow_intensity):
-            multiplier = 1.5 if default_hover else 1.0
-            alpha_factor = (1 - i/glow_intensity) * multiplier
-            glow_color = (0, min(int(200 + 55 * default_hover * alpha_factor), 255), 255)
-            default_rect = pygame.Rect(default_button.x - i, default_button.y - i, default_button.width + 2*i, default_button.height + 2*i)
+            default_rect = pygame.Rect(
+                hover_button.x - i, 
+                hover_button.y - i, 
+                hover_button.width + 2*i, 
+                hover_button.height + 2*i
+            )
+            glow_color = (0, 200+min(55, i*10), 255) if default_hover else (0, 200, 255)
             pygame.draw.rect(screen, glow_color, default_rect, 1)
-        border_width = 3 if default_hover else 2
-        pygame.draw.rect(screen, (0, 200, 255), default_button, border_width)
-        default_text = small_font.render("Default", True, WHITE)
-        default_text_rect = default_text.get_rect(center=default_button.center)
-        screen.blit(default_text, default_text_rect)
-        
-        # Draw QBoard button with hover effect
-        pygame.draw.rect(screen, (20, 20, 20), qboard_button)
+        pygame.draw.rect(screen, (0, 200, 255), hover_button, 2)
+    default_text = small_font.render("Default", True, WHITE)
+    default_text_rect = default_text.get_rect(center=hover_button.center)
+    screen.blit(default_text, default_text_rect)
+    
+    # QBoard button
+        hover_expansion = 3 if qboard_hover else 0
+        hover_button = pygame.Rect(
+            qboard_button.x - hover_expansion, 
+            qboard_button.y - hover_expansion, 
+            qboard_button.width + hover_expansion*2, 
+            qboard_button.height + hover_expansion*2
+        )
+        pygame.draw.rect(screen, (20, 20, 20), hover_button)
         glow_intensity = 6 if qboard_hover else 5
         for i in range(1, glow_intensity):
-            multiplier = 1.5 if qboard_hover else 1.0
-            alpha_factor = (1 - i/glow_intensity) * multiplier
-            glow_color = (min(int(255 * multiplier * alpha_factor), 255), 0, min(int(150 * multiplier * alpha_factor), 255))
-            qboard_rect = pygame.Rect(qboard_button.x - i, qboard_button.y - i, qboard_button.width + 2*i, qboard_button.height + 2*i)
+            qboard_rect = pygame.Rect(
+                hover_button.x - i, 
+                hover_button.y - i, 
+                hover_button.width + 2*i, 
+                hover_button.height + 2*i
+            )
+            glow_color = (255, min(100, i*20), 150+min(30, i*5)) if qboard_hover else (255, 0, 150)
             pygame.draw.rect(screen, glow_color, qboard_rect, 1)
-        border_width = 3 if qboard_hover else 2
-        pygame.draw.rect(screen, (255, 0, 150), qboard_button, border_width)
-        qboard_text = small_font.render("QBoard", True, WHITE)
-        qboard_text_rect = qboard_text.get_rect(center=qboard_button.center)
+        pygame.draw.rect(screen, (255, 0, 150), hover_button, 2)
+    qboard_text = small_font.render("QBoard", True, WHITE)
+    qboard_text_rect = qboard_text.get_rect(center=hover_button.center)
         screen.blit(qboard_text, qboard_text_rect)
-        
-        # Auto-detected mode indicator with pulsing effect if it matches a button
-        auto_text_color = (200, 200, 200)
-        if detected_display == "DEFAULT" and default_hover:
-            pulse = 0.5 + 0.5 * math.sin(current_time * 0.005)
-            auto_text_color = (0, int(200 + 55 * pulse), 255)
-        elif detected_display == "QBOARD" and qboard_hover:
-            pulse = 0.5 + 0.5 * math.sin(current_time * 0.005)
-            auto_text_color = (255, 0, int(150 * pulse))
-        
-        auto_text = small_font.render(f"Auto-detected: {detected_display}", True, auto_text_color)
-        auto_rect = auto_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + button_y_pos + button_height + 30))
+    
+    # Auto-detected mode indicator
         screen.blit(auto_text, auto_rect)
         
-        # Pulsing SANGSOM text effect
-        pulse_factor = 0.5 + 0.5 * math.sin(current_time * 0.002)
-        bright_yellow = (255, 255, 0)
-        lite_yellow = (255, 255, 150)
-        sangsom_color = tuple(int(bright_yellow[i] * (1 - pulse_factor) + lite_yellow[i] * pulse_factor) for i in range(3))
+        # SANGSOM animation
+        sangsom_pulse += sangsom_pulse_dir
+        if sangsom_pulse > 1.0 or sangsom_pulse < 0.0:
+            sangsom_pulse_dir *= -1
+            
+    bright_yellow = (255, 255, 0)
+    lite_yellow = (255, 255, 150)
+    sangsom_color = tuple(int(bright_yellow[i] * (1 - sangsom_pulse) + lite_yellow[i] * sangsom_pulse) for i in range(3))
+    
+        # Draw collaboration text with pulsing SANGSOM
+    collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
+    collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
+    collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
         
-        collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
-        collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
-        collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
+    collab_rect1 = collab_text1.get_rect()
+    collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
+    collab_rect1.centery = HEIGHT // 2 + int(350 * scale_factor)
         
-        collab_rect1 = collab_text1.get_rect()
-        collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
-        collab_rect1.centery = HEIGHT // 2 + int(350 * scale_factor)
+    collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + int(350 * scale_factor)))
         
-        collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + int(350 * scale_factor)))
+    collab_rect3 = collab_text3.get_rect()
+    collab_rect3.left = collab_rect2.right
+    collab_rect3.centery = HEIGHT // 2 + int(350 * scale_factor)
         
-        collab_rect3 = collab_text3.get_rect()
-        collab_rect3.left = collab_rect2.right
-        collab_rect3.centery = HEIGHT // 2 + int(350 * scale_factor)
+    screen.blit(collab_text1, collab_rect1)
+    screen.blit(collab_text2, collab_rect2)
+    screen.blit(collab_text3, collab_rect3)
         
-        screen.blit(collab_text1, collab_rect1)
-        screen.blit(collab_text2, collab_rect2)
-        screen.blit(collab_text3, collab_rect3)
-        
-        # Add subtle floating to creator text
-        creator_float = 2 * math.sin(current_time * 0.001)
-        creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
-        creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40 + creator_float))
-        screen.blit(creator_text, creator_rect)
-        
-        # Show FPS if in debug mode
-        from settings import DEBUG_MODE, SHOW_FPS
-        if DEBUG_MODE and SHOW_FPS:
-            fps = int(clock.get_fps())
-            fps_text = small_font.render(f"FPS: {fps}", True, (255, 255, 255))
-            screen.blit(fps_text, (10, 10))
-        
+        # Creator text
+    creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
+    creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40))
+    screen.blit(creator_text, creator_rect)
+    
+        # Update display and maintain frame rate
         pygame.display.flip()
-        clock.tick(60)  # Cap at 60 FPS
+        clock.tick(60)
 
 def draw_neon_button(rect, base_color):
     """Draws a button with a neon glow effect."""
@@ -1404,9 +1451,8 @@ def game_loop(mode):
                 break
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    # Exit the game completely instead of just returning to level menu
-                    pygame.quit()
-                    exit()
+                    running = False
+                    break
                 if event.key == pygame.K_SPACE:
                     current_ability = abilities[(abilities.index(current_ability) + 1) % len(abilities)]
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
