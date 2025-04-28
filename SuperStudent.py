@@ -154,11 +154,14 @@ lasers = []
 # Glass cracking effect variables
 glass_cracks = []
 MAX_CRACKS = 15  # Number of cracks needed to shatter the screen
-background_shattered = False  # Track if the background is currently shattered
+background_shattered = False
 CRACK_DURATION = 600  # How long the shattered effect lasts (in frames)
 shatter_timer = 0  # Timer for the shattered effect
 opposite_background = BLACK  # Opposite of white
 current_background = WHITE  # Start with white background for levels
+game_over_triggered = False  # Flag to track if game over has been triggered
+game_over_delay = 0  # Delay before showing game over screen to allow animation to play
+GAME_OVER_DELAY_FRAMES = 60  # Number of frames to wait before showing game over
 
 # Add this near the other global variables at the top
 player_color_transition = 0
@@ -508,7 +511,7 @@ def level_menu():
 ###############################################################################
 
 def game_loop(mode):
-    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius
+    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius, game_over_triggered, game_over_delay
 
     # REVERT: Restore swirl particles and explosion counts for levels gameplay
     create_swirl_particles(WIDTH // 2, HEIGHT // 2)  # Use default parameters based on display mode
@@ -654,7 +657,7 @@ def game_loop(mode):
         dots = []
         dots_active = False
         frame = 0
-        overall_destroyed = 0  # <-- Already initialized above, but safe to re-initialize here
+        overall_destroyed = 0
 
         # --- Mother Dot Vibration ---
         for vib in range(vibration_frames):
@@ -792,6 +795,21 @@ def game_loop(mode):
                     if not hit_target:
                         handle_misclick(mx, my)
             
+            # Check if game over was triggered by screen breaking
+            if game_over_triggered:
+                # Let the shatter animation play for a bit before showing game over screen
+                if game_over_delay > 0:
+                    game_over_delay -= 1
+                else:
+                    game_started = False  # Pause the game
+                    if game_over_screen():  # Show game over screen
+                        running = False  # Return to level menu
+                        break
+                    else:
+                        # This else block shouldn't normally be reached due to required click
+                        running = False
+                        break
+            
             # --- Update Dots ---
             for dot in dots:
                 if not dot["alive"]:
@@ -811,23 +829,51 @@ def game_loop(mode):
                 if dot["y"] + dot["radius"] > HEIGHT:
                     dot["y"] = HEIGHT - dot["radius"]
                     dot["dy"] *= -1
+                    
             # --- Draw ---
-            screen.fill(BLACK)
+            # Apply screen shake if active
+            if shake_duration > 0:
+                offset_x = random.randint(-shake_magnitude, shake_magnitude)
+                offset_y = random.randint(-shake_magnitude, shake_magnitude)
+                shake_duration -= 1
+            else:
+                offset_x, offset_y = 0, 0
+                
+            # Fill background (apply offset if shaking) - use same system as other levels
+            if background_shattered:
+                screen.fill(opposite_background)
+            else:
+                screen.fill(current_background)
 
-            # Draw cracks if in colors level too (use black background) 
+            # Draw cracks
             draw_cracks(screen)
+            
+            # --- Draw Background Elements (Stars) - same as other levels ---
+            for star in stars:
+                x, y, radius = star
+                y += 1 # Slower star movement speed
+                pygame.draw.circle(screen, (200, 200, 200), (x + offset_x, y + offset_y), radius)
+                if y > HEIGHT + radius: # Reset when fully off screen
+                    y = random.randint(-50, -10)
+                    x = random.randint(0, WIDTH)
+                star[1] = y
+                star[0] = x
 
-            # Draw all alive dots
+            # Draw all alive dots with screen shake offsets
             for dot in dots:
                 if dot["alive"]:
-                    pygame.draw.circle(screen, dot["color"], (int(dot["x"]), int(dot["y"])), dot["radius"])
-            # Draw explosions
+                    pygame.draw.circle(screen, dot["color"], 
+                                      (int(dot["x"] + offset_x), int(dot["y"] + offset_y)), 
+                                      dot["radius"])
+                    
+            # Draw explosions with offsets
             for explosion in explosions[:]:
                 if explosion["duration"] > 0:
-                    draw_explosion(explosion)
+                    draw_explosion(explosion, offset_x, offset_y)
                     explosion["duration"] -= 1
                 else:
                     explosions.remove(explosion)
+                    
             # HUD
             info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, WHITE)
             screen.blit(info, (20, 20))
@@ -837,9 +883,9 @@ def game_loop(mode):
             # Show a sample target dot at top right
             pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 24)
             pygame.draw.rect(screen, WHITE, (WIDTH - 90, 30, 60, 60), 2)
-            # Remove all other text (set to black for easy finding)
-            screen.blit(small_font.render("", True, BLACK), (0,0))
+            # Display info
             display_info(score, "color", mother_color_name, overall_destroyed + letters_destroyed, 10, "colors")
+            
             pygame.display.flip()
             clock.tick(50)  # PERFORMANCE: Lower FPS
             # End condition
@@ -1052,6 +1098,21 @@ def game_loop(mode):
             shake_duration -= 1
         else:
             offset_x, offset_y = 0, 0
+
+        # Check if game over was triggered by screen breaking
+        if game_over_triggered:
+            # Let the shatter animation play for a bit before showing game over screen
+            if game_over_delay > 0:
+                game_over_delay -= 1
+            else:
+                game_started = False  # Pause the game
+                if game_over_screen():  # Show game over screen
+                    running = False  # Return to level menu
+                    break
+                else:
+                    # This else block shouldn't normally be reached due to required click
+                    running = False
+                    break
 
         # Fill background (apply offset if shaking)
         if background_shattered:
@@ -2007,7 +2068,7 @@ def create_particle(x, y, color, size, dx, dy, duration):
 
 def create_crack(x, y):
     """Creates a crack effect at the given position."""
-    global glass_cracks, background_shattered, shatter_timer, opposite_background, current_background
+    global glass_cracks, background_shattered, shatter_timer, opposite_background, current_background, game_over_triggered, game_over_delay
     
     # Create a new crack with random properties
     segments = random.randint(4, 8)  # Number of line segments in the crack
@@ -2076,7 +2137,7 @@ def create_crack(x, y):
     })
     
     # Check if we've reached the maximum number of cracks to shatter
-    if len(glass_cracks) >= MAX_CRACKS:
+    if len(glass_cracks) >= MAX_CRACKS and not game_over_triggered:
         # Swap backgrounds
         background_shattered = True
         shatter_timer = CRACK_DURATION
@@ -2084,11 +2145,12 @@ def create_crack(x, y):
         # Swap current and opposite backgrounds
         current_background, opposite_background = opposite_background, current_background
         
-        # --- Reset cracks immediately to require MAX_CRACKS for next shatter ---
-        glass_cracks = [] # Reset the list here
+        # Set flag for game over but with delay to show animation first
+        game_over_triggered = True
+        game_over_delay = GAME_OVER_DELAY_FRAMES
         
-        # Create shatter particles but keep the cracks (now reset)
-        shatter_count = 100
+        # Create shatter particles
+        shatter_count = 200  # More particles for dramatic effect
         for _ in range(shatter_count):
             # Create glass particle
             angle = random.uniform(0, math.pi * 2)
@@ -2100,7 +2162,7 @@ def create_crack(x, y):
                 random.uniform(5, 15),  # Size
                 math.cos(angle) * speed,  # X velocity
                 math.sin(angle) * speed,  # Y velocity
-                random.randint(30, 90)  # Duration
+                random.randint(60, 120)  # Longer duration for animation to be visible
             )
 
 def draw_cracks(surface):
@@ -2243,6 +2305,118 @@ def draw_flamethrower(laser, offset_x=0, offset_y=0):
         flame_surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
         pygame.draw.circle(flame_surf, (*color, 180), (radius, radius), radius)
         screen.blit(flame_surf, (draw_x - radius, draw_y - radius))
+
+def game_over_screen():
+    """Screen shown when player breaks the screen completely."""
+    flash = True
+    flash_count = 0
+    running = True
+    clock = pygame.time.Clock()
+    
+    # Add click delay timer (5 seconds at 60 fps = 300 frames)
+    click_delay = 300
+    click_enabled = False
+    countdown_seconds = 5
+    
+    # Calculate sad face dimensions (70% of screen)
+    face_radius = min(WIDTH, HEIGHT) * 0.35  # 70% diameter, so 35% radius
+    face_center_x = WIDTH // 2
+    face_center_y = HEIGHT // 2 - 50  # Slight offset to make room for text
+    
+    # Eye dimensions
+    eye_radius = face_radius * 0.15
+    eye_offset_x = face_radius * 0.2
+    eye_offset_y = face_radius * 0.1
+    
+    # Mouth dimensions
+    mouth_width = face_radius * 0.6
+    mouth_height = face_radius * 0.3
+    mouth_offset_y = face_radius * 0.15
+    
+    while running:
+        screen.fill(BLACK)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.quit()
+                exit()
+            # Force click to continue, but only after delay expires
+            if event.type == pygame.MOUSEBUTTONDOWN and click_enabled:
+                running = False
+                # Reset game state for next play
+                global glass_cracks, background_shattered, game_over_triggered
+                glass_cracks = []
+                background_shattered = False
+                game_over_triggered = False
+                return True  # Return True to indicate we should go back to level menu
+        
+        # Draw sad face (70% of screen)
+        pygame.draw.circle(screen, WHITE, (face_center_x, face_center_y), int(face_radius), 5)
+        
+        # Draw eyes (X marks)
+        left_eye_x = face_center_x - eye_offset_x
+        right_eye_x = face_center_x + eye_offset_x
+        eye_y = face_center_y - eye_offset_y
+        
+        # Left eye X
+        pygame.draw.line(screen, WHITE, 
+                        (left_eye_x - eye_radius, eye_y - eye_radius),
+                        (left_eye_x + eye_radius, eye_y + eye_radius), 5)
+        pygame.draw.line(screen, WHITE, 
+                        (left_eye_x - eye_radius, eye_y + eye_radius),
+                        (left_eye_x + eye_radius, eye_y - eye_radius), 5)
+        
+        # Right eye X
+        pygame.draw.line(screen, WHITE, 
+                        (right_eye_x - eye_radius, eye_y - eye_radius),
+                        (right_eye_x + eye_radius, eye_y + eye_radius), 5)
+        pygame.draw.line(screen, WHITE, 
+                        (right_eye_x - eye_radius, eye_y + eye_radius),
+                        (right_eye_x + eye_radius, eye_y - eye_radius), 5)
+        
+        # Draw sad mouth (upside down arc)
+        mouth_rect = pygame.Rect(
+            face_center_x - mouth_width // 2,
+            face_center_y + mouth_offset_y,
+            mouth_width,
+            mouth_height
+        )
+        pygame.draw.arc(screen, WHITE, mouth_rect, 0, math.pi, 5)
+        
+        # Display "You broke the screen!" message
+        game_over_font = fonts[2]  # Use one of the preloaded larger fonts
+        game_over_text = game_over_font.render("You broke the screen!", True, WHITE)
+        game_over_rect = game_over_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + face_radius + 50))
+        screen.blit(game_over_text, game_over_rect)
+        
+        # Flashing "NEXT PLAYER!" text alternating between RED and WHITE
+        next_player_color = (255, 0, 0) if flash else (255, 255, 255)  # RED and WHITE
+        next_player_text = fonts[0].render("NEXT PLAYER!", True, next_player_color)
+        next_player_rect = next_player_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + face_radius + 120))
+        screen.blit(next_player_text, next_player_rect)
+        
+        # Update and display click delay countdown
+        if click_delay > 0:
+            click_delay -= 1
+            current_second = countdown_seconds - (click_delay // 60)
+            countdown_text = small_font.render(f"Please wait {max(1, current_second + 1)}...", True, (150, 150, 150))
+            click_rect = countdown_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + face_radius + 180))
+            screen.blit(countdown_text, click_rect)
+        else:
+            click_enabled = True
+            click_text = small_font.render("Click to continue", True, (150, 150, 150))
+            click_rect = click_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + face_radius + 180))
+            screen.blit(click_text, click_rect)
+        
+        pygame.display.flip()
+        flash_count += 1
+        if flash_count % 15 == 0:  # Flash faster (twice per second)
+            flash = not flash
+        clock.tick(60)
+    
+    return False  # Should not be reached if click is required
 
 if __name__ == "__main__":
     welcome_screen()
