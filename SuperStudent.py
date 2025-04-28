@@ -29,10 +29,77 @@ WIDTH, HEIGHT = info.current_w, info.current_h
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
 pygame.display.set_caption("Super Student")
 
+# Function to determine initial display mode based on screen size
+def detect_display_type():
+    info = pygame.display.Info()
+    screen_w, screen_h = info.current_w, info.current_h
+    
+    # If screen is larger than typical desktop monitors, assume it's a QBoard
+    if screen_w >= 1920 and screen_h >= 1080:
+        if screen_w > 2560 or screen_h > 1440:  # Larger than QHD is likely QBoard
+            return "QBOARD"
+    
+    # Default to smaller format for typical monitors/laptops
+    return "DEFAULT"
+
+# Initialize with default mode first
+DISPLAY_MODE = "DEFAULT"
+
+# Try to load previous display mode setting
+try:
+    with open("display_settings.txt", "r") as f:
+        loaded_mode = f.read().strip()
+        if loaded_mode in ["DEFAULT", "QBOARD"]:
+            DISPLAY_MODE = loaded_mode
+except:
+    # If file doesn't exist or can't be read, use auto-detection
+    DISPLAY_MODE = detect_display_type()
+
+# Function to initialize font and resource sizes based on display mode
+def init_resources():
+    global font_sizes, fonts, large_font, small_font, TARGET_FONT, TITLE_FONT
+    global MAX_PARTICLES, MAX_EXPLOSIONS, MAX_SWIRL_PARTICLES, mother_radius
+    
+    if DISPLAY_MODE == "DEFAULT":
+        # Default size for regular monitors
+        font_sizes = [130, 135, 140, 145, 105]
+        fonts = [pygame.font.Font(None, size) for size in font_sizes]
+        large_font = pygame.font.Font(None, 150)
+        small_font = pygame.font.Font(None, 36)
+        TARGET_FONT = pygame.font.Font(None, 210)
+        TITLE_FONT = pygame.font.Font(None, 320)
+        
+        # Adjust particle counts and sizes for default display
+        MAX_PARTICLES = 200
+        MAX_EXPLOSIONS = 5
+        MAX_SWIRL_PARTICLES = 75
+        mother_radius = 90
+    else:  # "QBOARD"
+        # Larger size for Qboard display
+        font_sizes = [260, 270, 280, 290, 210]
+        fonts = [pygame.font.Font(None, size) for size in font_sizes]
+        large_font = pygame.font.Font(None, 300)
+        small_font = pygame.font.Font(None, 36)
+        TARGET_FONT = pygame.font.Font(None, 420)
+        TITLE_FONT = pygame.font.Font(None, 640)
+        
+        # Qboard uses more particles and larger resources
+        MAX_PARTICLES = 400
+        MAX_EXPLOSIONS = 10
+        MAX_SWIRL_PARTICLES = 150
+        mother_radius = 180
+    
+    # Save the display mode preference
+    try:
+        with open("display_settings.txt", "w") as f:
+            f.write(DISPLAY_MODE)
+    except:
+        pass  # If can't write, silently continue
+
+# Initialize resources with current mode
+init_resources()
+
 # OPTIMIZATION: Global particle system limits to prevent lag
-MAX_PARTICLES = 400  # Maximum particles allowed at once
-MAX_EXPLOSIONS = 10  # Maximum explosions allowed at once
-MAX_SWIRL_PARTICLES = 150  # Maximum swirl particles
 PARTICLE_CULLING_DISTANCE = WIDTH  # Distance at which to cull offscreen particles
 # Particle pool for object reuse
 particle_pool = []
@@ -115,7 +182,22 @@ convergence_timer = 0
 ###############################################################################
 
 def welcome_screen():
-    """Show a static welcome screen (image only, no animation)."""
+    """Show the welcome screen with display size options."""
+    global DISPLAY_MODE
+    
+    # Calculate scaling factor based on current screen size
+    # This ensures welcome screen elements fit properly on any display
+    base_height = 1080  # Base design height
+    scale_factor = HEIGHT / base_height
+    
+    # Apply scaling to title and buttons
+    title_offset = int(50 * scale_factor)
+    button_width = int(200 * scale_factor)
+    button_height = int(60 * scale_factor)
+    button_spacing = int(20 * scale_factor)
+    button_y_pos = int(200 * scale_factor)
+    instruction_y_pos = int(150 * scale_factor)
+    
     # --- Draw everything ONCE to a surface ---
     static_surface = pygame.Surface((WIDTH, HEIGHT))
     # Vivid bright colors for particles
@@ -137,7 +219,7 @@ def welcome_screen():
             "x": x,
             "y": y,
             "color": random.choice(particle_colors),
-            "size": random.randint(13, 17),
+            "size": random.randint(int(13 * scale_factor), int(17 * scale_factor)),
         })
     static_surface.fill(BLACK)
     for particle in grav_particles:
@@ -151,17 +233,22 @@ def welcome_screen():
     g = int(current_color[1] * 0.5 + next_color[1] * 0.5)
     b = int(current_color[2] * 0.5 + next_color[2] * 0.5)
     title_color = (r, g, b)
+    
+    # Use scaled font size for title based on current display
+    title_font_size = int(320 * scale_factor)  # Default title size times scale factor
+    title_font = pygame.font.Font(None, title_font_size)
+    
     # Draw title with depth/glow effect (single frame)
     title_text = "Super Student"
-    title_rect_center = (WIDTH // 2, HEIGHT // 2)
+    title_rect_center = (WIDTH // 2, HEIGHT // 2 - title_offset)  # Move title up to make room for buttons
     shadow_color = (20, 20, 20)
     for depth in range(1, 0, -1):
-        shadow = TITLE_FONT.render(title_text, True, shadow_color)
+        shadow = title_font.render(title_text, True, shadow_color)
         shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
         static_surface.blit(shadow, shadow_rect)
     glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
     for i, glow_color in enumerate(glow_colors):
-        glow = TITLE_FONT.render(title_text, True, glow_color)
+        glow = title_font.render(title_text, True, glow_color)
         offset = i + 1
         for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
             glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
@@ -169,45 +256,80 @@ def welcome_screen():
     highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
     shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
     mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
-    highlight = TITLE_FONT.render(title_text, True, highlight_color)
+    highlight = title_font.render(title_text, True, highlight_color)
     highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
     static_surface.blit(highlight, highlight_rect)
-    mid_tone = TITLE_FONT.render(title_text, True, mid_color)
+    mid_tone = title_font.render(title_text, True, mid_color)
     mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
     static_surface.blit(mid_tone, mid_rect)
-    inner_shadow = TITLE_FONT.render(title_text, True, shadow_color)
+    inner_shadow = title_font.render(title_text, True, shadow_color)
     inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
     static_surface.blit(inner_shadow, inner_shadow_rect)
-    title = TITLE_FONT.render(title_text, True, title_color)
+    title = title_font.render(title_text, True, title_color)
     title_rect = title.get_rect(center=title_rect_center)
     static_surface.blit(title, title_rect)
+    
     # Instructions
-    instructions = small_font.render("Click to start!", True, (255, 0, 0))
-    instruction_rect = instructions.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 200))
-    static_surface.blit(instructions, instruction_rect)
+    display_text = small_font.render("Choose Display Size:", True, (255, 255, 255))
+    display_rect = display_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + instruction_y_pos))
+    static_surface.blit(display_text, display_rect)
+    
+    # Create buttons for display size options
+    # Default button
+    default_button = pygame.Rect((WIDTH // 2 - button_width - button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
+    pygame.draw.rect(static_surface, (20, 20, 20), default_button)
+    for i in range(1, 6):
+        default_rect = pygame.Rect(default_button.x - i, default_button.y - i, default_button.width + 2*i, default_button.height + 2*i)
+        pygame.draw.rect(static_surface, (0, 200, 255), default_rect, 1)
+    pygame.draw.rect(static_surface, (0, 200, 255), default_button, 2)
+    default_text = small_font.render("Default", True, WHITE)
+    default_text_rect = default_text.get_rect(center=default_button.center)
+    static_surface.blit(default_text, default_text_rect)
+    
+    # QBoard button
+    qboard_button = pygame.Rect((WIDTH // 2 + button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
+    pygame.draw.rect(static_surface, (20, 20, 20), qboard_button)
+    for i in range(1, 6):
+        qboard_rect = pygame.Rect(qboard_button.x - i, qboard_button.y - i, qboard_button.width + 2*i, qboard_button.height + 2*i)
+        pygame.draw.rect(static_surface, (255, 0, 150), qboard_rect, 1)
+    pygame.draw.rect(static_surface, (255, 0, 150), qboard_button, 2)
+    qboard_text = small_font.render("QBoard", True, WHITE)
+    qboard_text_rect = qboard_text.get_rect(center=qboard_button.center)
+    static_surface.blit(qboard_text, qboard_text_rect)
+    
+    # Auto-detected mode indicator
+    auto_text = small_font.render(f"Auto-detected: {detect_display_type()}", True, (200, 200, 200))
+    auto_rect = auto_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + button_y_pos + button_height + 30))
+    static_surface.blit(auto_text, auto_rect)
+    
     # Pulsing SANGSOM text effect (pick a static pulse)
     pulse_factor = 0.5
     bright_yellow = (255, 255, 0)
     lite_yellow = (255, 255, 150)
     sangsom_color = tuple(int(bright_yellow[i] * (1 - pulse_factor) + lite_yellow[i] * pulse_factor) for i in range(3))
-    collab_font = pygame.font.Font(None, 100)
+    
+    # Scale collaboration font based on display size
+    collab_font_size = int(100 * scale_factor)
+    collab_font = pygame.font.Font(None, collab_font_size)
+    
     collab_text1 = collab_font.render("In collaboration with ", True, WHITE)
     collab_text2 = collab_font.render("SANGSOM", True, sangsom_color)
     collab_text3 = collab_font.render(" Kindergarten", True, WHITE)
     collab_rect1 = collab_text1.get_rect()
     collab_rect1.right = WIDTH // 2 - collab_text2.get_width() // 2
-    collab_rect1.centery = HEIGHT // 2 + 350
-    collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 350))
+    collab_rect1.centery = HEIGHT // 2 + int(350 * scale_factor)
+    collab_rect2 = collab_text2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + int(350 * scale_factor)))
     collab_rect3 = collab_text3.get_rect()
     collab_rect3.left = collab_rect2.right
-    collab_rect3.centery = HEIGHT // 2 + 350
+    collab_rect3.centery = HEIGHT // 2 + int(350 * scale_factor)
     static_surface.blit(collab_text1, collab_rect1)
     static_surface.blit(collab_text2, collab_rect2)
     static_surface.blit(collab_text3, collab_rect3)
     creator_text = small_font.render("Created by Teacher Evan and Teacher Lee", True, WHITE)
     creator_rect = creator_text.get_rect(center=(WIDTH // 2, HEIGHT - 40))
     static_surface.blit(creator_text, creator_rect)
-    # --- Show the static image until click/quit ---
+    
+    # --- Show the static image until button click ---
     running = True
     while running:
         screen.blit(static_surface, (0, 0))
@@ -220,7 +342,15 @@ def welcome_screen():
                 pygame.quit()
                 exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
-                running = False
+                mx, my = pygame.mouse.get_pos()
+                if default_button.collidepoint(mx, my):
+                    DISPLAY_MODE = "DEFAULT"
+                    init_resources()
+                    running = False
+                elif qboard_button.collidepoint(mx, my):
+                    DISPLAY_MODE = "QBOARD"
+                    init_resources()
+                    running = False
 
 def draw_neon_button(rect, base_color):
     """Draws a button with a neon glow effect."""
@@ -378,10 +508,10 @@ def level_menu():
 ###############################################################################
 
 def game_loop(mode):
-    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer
+    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius
 
     # REVERT: Restore swirl particles and explosion counts for levels gameplay
-    create_swirl_particles(WIDTH // 2, HEIGHT // 2, count=50)  # Restore to 50
+    create_swirl_particles(WIDTH // 2, HEIGHT // 2)  # Use default parameters based on display mode
 
     # Reset all game states
     particles = []
@@ -513,7 +643,7 @@ def game_loop(mode):
         dots_per_color = 3
         
         center = (WIDTH // 2, HEIGHT // 2)
-        mother_radius = 180
+        # mother_radius already defined in init_resources based on display mode
         vibration_frames = 30
         disperse_frames = 30
         running = True
@@ -1675,30 +1805,35 @@ def start_charge_up_effect(player_x, player_y, target_x, target_y):
         })
 
 # Restore swirl particle count for create_swirl_particles
-def create_swirl_particles(center_x, center_y, radius=150, count=50):  # Restore to 50
+def create_swirl_particles(center_x, center_y, radius=None, count=None):  # Make parameters adjustable
+    """Creates particles that swirl around a center point."""
     global swirl_particles
-    swirl_particles = [] # Clear existing ones
-
+    
+    # Set default values based on display mode
+    if radius is None:
+        radius = 150 if DISPLAY_MODE == "QBOARD" else 80
+    
+    if count is None:
+        count = 50 if DISPLAY_MODE == "QBOARD" else 30
+    
     # Limit count to MAX_SWIRL_PARTICLES
     count = min(count, MAX_SWIRL_PARTICLES)
-
+    
+    swirl_particles = []
+    current_time_ms = pygame.time.get_ticks()
+    
     for _ in range(count):
-        angle = random.uniform(0, 2 * math.pi)
-        # Start particles within a tighter band around the target radius
-        distance = random.uniform(radius * 0.8, radius * 1.2)
-        angular_speed = random.uniform(0.02, 0.05) * random.choice([-1, 1])
-        particle_radius = random.randint(3, 6) # Slightly larger swirl particles
-        color = random.choice(FLAME_COLORS)
-
+        # Create a particle with randomized properties and initial angle
         swirl_particles.append({
-            "angle": angle,
-            "distance": distance,
-            "base_distance": distance, # Store original distance for pulsing
-            "angular_speed": angular_speed,
-            "radius": particle_radius,
-            "color": color,
-            "pulse_offset": random.uniform(0, 2 * math.pi), # For varied pulsing
-            "pulse_speed": random.uniform(0.03, 0.06) # Slightly faster pulse
+            "angle": random.uniform(0, math.pi * 2),
+            "rotation_speed": random.uniform(0.02, 0.04) * (1 if random.random() > 0.5 else -1),
+            "base_distance": random.uniform(0.7, 1.0) * radius,  # Vary distance from center
+            "distance": 0,  # Will be calculated each frame
+            "color": random.choice(FLAME_COLORS),
+            "radius": random.randint(4, 8) if DISPLAY_MODE == "DEFAULT" else random.randint(6, 12),
+            "pulse_speed": random.uniform(0.5, 1.5),
+            "pulse_offset": random.uniform(0, math.pi * 2),
+            "convergence": False
         })
 
 def update_swirl_particles(center_x, center_y):
@@ -1742,7 +1877,7 @@ def update_swirl_particles(center_x, center_y):
                 continue
         else:
             # --- Normal Swirling Motion ---
-            particle["angle"] += particle["angular_speed"]
+            particle["angle"] += particle["rotation_speed"]
             # Pulsing distance effect
             pulse = math.sin(current_time_ms * 0.001 * particle["pulse_speed"] + particle["pulse_offset"]) * 20 # Pulse magnitude
             particle["distance"] = particle["base_distance"] + pulse

@@ -1,0 +1,50 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+## 2024-06-09: Critical Game Visibility Fix
+
+### Problem
+The game was experiencing severe visibility issues where game elements (centerpiece target and drop targets) would disappear after the first screen shatter effect. This was a long-standing issue that had persisted through multiple attempts to fix it.
+
+### Root Cause Analysis
+The issue stemmed from an overly complex color handling system that was trying to dynamically adjust colors based on the background state. The previous attempts to fix this had introduced:
+1. Dynamic color switching between BLACK and WHITE based on background
+2. Complex contrast calculations
+3. Multiple color state variables
+
+### Solution
+The fix involved:
+1. Simplifying the color system to use consistent colors throughout the game
+2. Restoring the original `center_target_color` for all game elements
+3. Removing the dynamic color switching logic
+4. Using a fixed star color of (200, 200, 200)
+5. Maintaining color consistency across all game states
+
+### Technical Details
+- Removed conditional color logic that was causing elements to disappear
+- Restored the original color transition system for the center target
+- Simplified the drawing code to use consistent colors
+- Maintained the screen shatter effect while ensuring element visibility
+
+### Impact
+- Game elements now remain visible throughout all game states
+- Screen shatter effect works as intended without affecting visibility
+- Improved game stability and consistency
+- Better user experience with clear visibility of all game elements
+
+### Key Learnings
+1. Sometimes simpler solutions are better than complex ones
+2. Dynamic color systems can introduce unexpected side effects
+3. Consistency in visual elements is crucial for game playability
+4. Testing across all game states is essential for identifying visibility issues
+
+### Future Considerations
+- Monitor for any new visibility issues
+- Consider adding visual feedback for color transitions
+- Document color handling system for future maintenance
+- Add automated tests for element visibility across game states
+
+[2024-06-09] Added missing 'init_fonts' function to initialize font variables based on DISPLAY_MODE, fixing the NameError at startup.
+

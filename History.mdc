@@ -1,34 +1,5 @@
-**Model: Claude-3.7-Sonnet | Date: 2024-07-13 | Time: 14:30 | Logic:**  
-- Modified "colors" level to switch target color after every 3 color dots are destroyed.
-- Added checkpoint screen after completing the colors level instead of "Well Done" screen.
-- Implemented condition that the checkpoint screen only becomes available after the shapes level is completed.
-- Added color switching logic that cycles through available colors in sequence rather than randomly.
-- Improved HUD to show progress toward next color change (3 dots per color).
-- Fixed issue with "Continue" button in checkpoint screen to restart the colors level from the beginning.
-- Reason: Enhances gameplay progression and adds more structure to the color identification challenge.
-
-**Model: Claude-3.7-Sonnet | Date: 2024-07-13 | Time: 16:45 | Logic:**  
-- Implemented optimized particle system with object pooling and global particle limits.
-- Added particle culling for particles that move too far off-screen to improve performance.
-- Modified all particle creation code to use the new optimized system.
-- Modified the game to show checkpoint screen for all completed levels, not just colors.
-- Set maximum limits for explosions, particles, and swirl particles to prevent lag.
-- Reason: These optimizations significantly improve performance on the QBOARD device by preventing excessive particle creation and efficiently managing memory.
-
-**Model: Claude-3.7-Sonnet | Date: 2024-07-13 | Time: 18:20 | Logic:**  
-- Fixed critical bug in shapes level where the checkpoint screen wasn't appearing after level completion.
-- Fixed issue with "destroyed" counter increasing uncontrollably after completing the shapes level.
-- Modified checkpoint processing logic to immediately handle checkpoint screen when a level is completed.
-- Added immediate exit from the main loop after level completion to prevent counter issues.
-- Updated checkpoint screen behavior to properly handle different level types (colors vs. non-colors).
-- Reason: These fixes resolve gameplay experience issues in shapes level, prevent counter bugs, and ensure consistent behavior across all level types.
-
-**Model: Claude-3.7-Sonnet | Date: 2024-07-13 | Time: 20:15 | Logic:**  
-- Fixed issue where player was incorrectly returned to welcome screen after completing a level.
-- Implemented glass cracking visual effect for misclicks on the background.
-- Added glass shattering effect after reaching 15 cracks, which flips the background color.
-- Updated both mouse and multitouch handling to create cracks on background clicks.
-- Ensured crack effects work across all game modes including colors level.
-- Added glass shattering particles when background fully cracks for enhanced visual effect.
-- Verified multitouch functionality in colors level is working correctly.
-- Reason: These changes create a more engaging visual experience and fix navigation issues after level completion.
+---
+description: 
+globs: 
+alwaysApply: false
+---
