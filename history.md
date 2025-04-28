@@ -1,5 +1,6 @@
 # History Log
 
+- 2024-06-10 09:30: Added multi-touch functionality to all game levels. Fixed event handling in colors level to properly support touch input with the same behavior as mouse clicks. Ensured proper handling of multiple simultaneous touches.
 - 2024-06-09 15:25: Fixed initialization sequence error in display mode detection. Resolved NameError by properly ordering function declarations before use.
 - 2024-06-09 15:10: Added automatic display scaling to welcome screen. Elements now dynamically resize based on actual screen resolution. Auto-detection feature identifies appropriate display mode (Default/QBoard) based on screen size.
 - 2024-06-09 14:45: Added persistent display settings. The game now remembers the user's last selected display mode (Default or QBoard) between sessions.

@@ -36,3 +36,23 @@ alwaysApply: false
 - Implemented countdown timer showing seconds remaining before click is enabled
 - Prevents accidental or premature dismissal of the game over screen
 - Changes instruction text from "Click to continue" to countdown text until delay expires
+
+## 2024-06-11: Modified Shapes Level Behavior
+- Added second round of shapes: After the first round of shapes is destroyed, they now rain down a second time
+- Changed completion behavior: After all shapes are destroyed (in both rounds), now shows checkpoint screen instead of level select
+- Added tracking variable `shapes_first_round_completed` to monitor progress
+
+## 2024-06-11: Bug Fix for Shapes Level Completion
+- Fixed issue where checkpoint screen wasn't being displayed after completing both rounds of shapes
+- Implemented direct call to checkpoint_screen() function after shapes level completion
+- Simplified level completion logic to avoid redundant code paths
+
+## 2024-06-11: Checkpoint Screen Behavior Fix
+- Modified shapes level checkpoint screen behavior to match colors level
+- "Continue" button now restarts the shapes level instead of returning to menu
+- "Menu" button still returns to level select screen
+
+## 2024-06-11: Checkpoint Screen Return Value Fix
+- Fixed issue where "Continue" button in shapes level wasn't properly restarting the level
+- Moved checkpoint screen logic to the correct location in the code
+- Ensured proper return values to trigger level restart when "Continue" is pressed

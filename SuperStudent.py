@@ -420,7 +420,7 @@ def level_menu():
                 pygame.quit(); exit()
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit(); exit()
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = pygame.mouse.get_pos()
                 if abc_rect.collidepoint(mx, my):
                     return "alphabet"
@@ -553,6 +553,9 @@ def game_loop(mode):
     except:
         # If file doesn't exist or can't be read, assume shapes not completed
         shapes_completed = False
+        
+    # Add a flag to track if shapes have rained down once already
+    shapes_first_round_completed = False
 
     # Create sequence based on selected mode
     if mode == "alphabet":
@@ -794,6 +797,48 @@ def game_loop(mode):
                     # Add crack on misclick in colors level
                     if not hit_target:
                         handle_misclick(mx, my)
+                
+                elif event.type == pygame.FINGERDOWN:
+                    touch_id = event.finger_id
+                    touch_x = event.x * WIDTH
+                    touch_y = event.y * HEIGHT
+                    active_touches[touch_id] = (touch_x, touch_y)
+                    
+                    hit_target = False
+                    for dot in dots:
+                        if dot["alive"]:
+                            dist = math.hypot(touch_x - dot["x"], touch_y - dot["y"])
+                            if dist <= dot["radius"]:
+                                hit_target = True
+                                if dot["target"]:
+                                    dot["alive"] = False
+                                    target_dots_left -= 1
+                                    score += 10
+                                    overall_destroyed += 1
+                                    current_color_dots_destroyed += 1
+                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)
+                                    
+                                    # Check if we need to switch the target color
+                                    if current_color_dots_destroyed >= 3:
+                                        color_idx = (color_idx + 1) % len(COLORS_LIST)
+                                        mother_color = COLORS_LIST[color_idx]
+                                        mother_color_name = color_names[color_idx]
+                                        current_color_dots_destroyed = 0
+                                        
+                                        # Update target status for all dots
+                                        for d in dots:
+                                            if d["alive"]:
+                                                d["target"] = (d["color"] == mother_color)
+                                break
+                    
+                    # Add crack on mistouch
+                    if not hit_target:
+                        handle_misclick(touch_x, touch_y)
+                
+                elif event.type == pygame.FINGERUP:
+                    touch_id = event.finger_id
+                    if touch_id in active_touches:
+                        del active_touches[touch_id]
             
             # Check if game over was triggered by screen breaking
             if game_over_triggered:
@@ -897,7 +942,7 @@ def game_loop(mode):
                     checkpoint_delay_frames = 60  # Wait ~1 second for animations
                     # Process checkpoint screen immediately
                     if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
-                        if not checkpoint_screen():  # If checkpoint returns False (chose Menu)
+                        if not checkpoint_screen(mode):  # If checkpoint returns False (chose Menu)
                             return False  # Return to menu
                         else:
                             # If continue button was pressed, restart the colors level
@@ -999,7 +1044,7 @@ def game_loop(mode):
                         if not hit_target and game_started:
                             handle_misclick(click_x, click_y)
 
-            if event.type == pygame.FINGERDOWN:
+            elif event.type == pygame.FINGERDOWN:
                 touch_id = event.finger_id
                 touch_x = event.x * WIDTH
                 touch_y = event.y * HEIGHT
@@ -1059,7 +1104,7 @@ def game_loop(mode):
                     if not hit_target and game_started:
                         handle_misclick(touch_x, touch_y)
 
-            if event.type == pygame.FINGERUP:
+            elif event.type == pygame.FINGERUP:
                 touch_id = event.finger_id
                 if touch_id in active_touches:
                     del active_touches[touch_id]
@@ -1533,7 +1578,7 @@ def game_loop(mode):
             if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
                 checkpoint_waiting = False
                 game_started = False  # Pause the game
-                if not checkpoint_screen(): # If checkpoint returns False (chose Menu)
+                if not checkpoint_screen(mode): # If checkpoint returns False (chose Menu)
                     running = False # Exit game loop to return to menu
                     break
                 else:
@@ -1541,8 +1586,10 @@ def game_loop(mode):
                     if mode == "colors" and shapes_completed:
                         running = False  # Signal to restart colors level
                         break
+                    elif mode == "shapes":
+                        return True  # Signal to restart shapes level
                     else:
-                        running = False  # Exit to menu for other level types
+                        game_started = True  # Resume the current level
             else:
                 checkpoint_delay_frames -= 1
 
@@ -1560,7 +1607,23 @@ def game_loop(mode):
             current_group_index += 1
             just_completed_level = True # Set flag to prevent immediate checkpoint
 
-            if current_group_index < len(groups):
+            # For shapes mode, make shapes rain down a second time after first round completion
+            if mode == "shapes" and not shapes_first_round_completed:
+                shapes_first_round_completed = True
+                # Reset the group index to start over
+                current_group_index = 0
+                current_group = groups[current_group_index]
+                letters_to_spawn = current_group.copy()
+                letters_to_target = current_group.copy()
+                if letters_to_target:
+                    target_letter = letters_to_target[0]
+                # Reset group-specific counters
+                letters_destroyed = 0
+                letters_spawned = 0
+                just_completed_level = False # Reset flag for the new level
+                game_started = True # Ensure game continues
+                last_checkpoint_triggered = overall_destroyed // 10 # Update checkpoint trigger base
+            elif current_group_index < len(groups):
                 # --- Start Next Group ---
                 current_group = groups[current_group_index]
                 letters_to_spawn = current_group.copy()
@@ -1586,25 +1649,61 @@ def game_loop(mode):
 
             else:
                 # --- All Groups Completed (Level Finished) ---
-                # Show checkpoint screen instead of well_done for all completed levels
-                pygame.time.delay(500)  # Brief delay like in colors level
-                checkpoint_waiting = True
-                checkpoint_delay_frames = 60  # Wait ~1 second for animations
-                
-                if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
-                    if not checkpoint_screen():  # If checkpoint returns False (chose Menu)
-                        running = False  # Exit game loop to return to menu
-                    else:
-                        # For shapes level, continue should return to menu
-                        running = False  # Exit to menu for non-colors levels
+                # For shapes level, always show checkpoint screen instead of well_done
+                if mode == "shapes":
+                    # Let the main completion check at the end of game_loop handle this
+                    # Just mark completion and exit the loop
+                    if shapes_first_round_completed:
+                        total_destroyed += letters_destroyed
+                        # Show checkpoint screen after completing shapes mode (both rounds)
+                        pygame.time.delay(500)  # Brief delay
+                        if checkpoint_screen(mode):  # If checkpoint returns True (chose Continue)
+                            return True  # Signal to the main loop to restart the level
+                        else:
+                            return False  # Return to menu
+                    # Otherwise continue to second round (handled earlier in the code)
                 else:
-                    checkpoint_delay_frames -= 1
+                    # Show checkpoint screen instead of well_done for all completed levels
+                    pygame.time.delay(500)  # Brief delay like in colors level
+                    checkpoint_waiting = True
+                    checkpoint_delay_frames = 60  # Wait ~1 second for animations
+                    
+                    if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
+                        if not checkpoint_screen(mode):  # If checkpoint returns False (chose Menu)
+                            running = False  # Exit game loop to return to menu
+                        else:
+                            # If continue was pressed, proceed to the next level/group if available
+                            if current_group_index < len(groups):
+                                # Continue to the next group in the sequence
+                                game_started = True
+                            else:
+                                # If all groups completed, return to menu
+                                running = False
+                    else:
+                        checkpoint_delay_frames -= 1
                 
                 # Exit the loop immediately to prevent counter issues
                 break
 
     # If the player completes the shapes level, mark it as completed
-    if mode == "shapes" and just_completed_level:
+    if mode == "shapes" and shapes_first_round_completed and not letters and not letters_to_spawn and letters_to_target == []:
+        try:
+            with open("level_progress.txt", "w") as f:
+                f.write("shapes_completed")
+        except:
+            # If we can't write to the file, just continue
+            pass
+        
+        # Show checkpoint screen after completing shapes mode (both rounds)
+        pygame.time.delay(500)  # Brief delay
+        if checkpoint_screen(mode):  # If checkpoint returns True (chose Continue)
+            # Restart the shapes level, just like colors level
+            return True  # Signal to the main loop to restart the level
+        else:
+            running = False  # Exit game loop to return to menu
+            
+    # Original completion check
+    elif mode == "shapes" and just_completed_level:
         try:
             with open("level_progress.txt", "w") as f:
                 f.write("shapes_completed")
@@ -1728,7 +1827,7 @@ def apply_explosion_effect(x, y, explosion_radius, letters):
             letter["can_bounce"] = True
 
 
-def checkpoint_screen():
+def checkpoint_screen(mode=None):
     """Display the checkpoint screen after every 10 targets with options."""
     running = True
     clock = pygame.time.Clock()
@@ -1771,15 +1870,11 @@ def checkpoint_screen():
         # Update and draw swirling particles
         for particle in swirling_particles:
             particle["angle"] += particle["angular_speed"]
-            # Optional: Add slight inward/outward drift or pulse
-            # particle["distance"] += math.sin(particle["angle"]) * 0.1
             x = center_x + particle["distance"] * math.cos(particle["angle"])
             y = center_y + particle["distance"] * math.sin(particle["angle"])
             pygame.draw.circle(screen, particle["color"], (int(x), int(y)), particle["radius"])
-            # Keep particles within a reasonable boundary (optional)
             if particle["distance"] > max(WIDTH, HEIGHT) * 0.8:
-                 particle["distance"] = random.uniform(50, 200) # Reset closer
-
+                 particle["distance"] = random.uniform(50, 200)
 
         # Smooth color transition for heading
         color_transition += 0.02
@@ -1793,7 +1888,7 @@ def checkpoint_screen():
         heading_color = (r, g, b)
 
         # Draw heading
-        checkpoint_font = fonts[2] # Use a larger font
+        checkpoint_font = fonts[2]
         checkpoint_text = checkpoint_font.render("Checkpoint!", True, heading_color)
         checkpoint_rect = checkpoint_text.get_rect(center=(center_x, center_y - 150))
         screen.blit(checkpoint_text, checkpoint_rect)
@@ -1807,8 +1902,12 @@ def checkpoint_screen():
         draw_neon_button(continue_rect, (0, 255, 0)) # Green for continue
         draw_neon_button(menu_rect, (255, 165, 0))   # Orange for menu
 
-        cont_text = small_font.render("Continue", True, WHITE)
-        menu_text = small_font.render("Menu", True, WHITE)
+        # Change button text based on mode
+        if mode == "shapes":
+            cont_text = small_font.render("Replay Level", True, WHITE)
+        else:
+            cont_text = small_font.render("Continue", True, WHITE)
+        menu_text = small_font.render("Level Select", True, WHITE)
         screen.blit(cont_text, cont_text.get_rect(center=continue_rect.center))
         screen.blit(menu_text, menu_text.get_rect(center=menu_rect.center))
 
@@ -2424,4 +2523,10 @@ if __name__ == "__main__":
         mode = level_menu()
         if mode is None:
             break
-        game_loop(mode)
+        
+        # Run the game loop and check its return value
+        restart_level = game_loop(mode)
+        
+        # If game_loop returns True, restart the level for shapes level or colors level
+        while restart_level and (mode == "shapes" or mode == "colors"):
+            restart_level = game_loop(mode)
