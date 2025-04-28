@@ -78,17 +78,59 @@ class ColorsLevel:
         self.collision_timer = 0
         self.color_changed = False  # Track if first color change has occurred
         
+        # Font caching
+        self.small_font = None
+        self.ghost_font = None
+        
+        # Flag to track initialization status
+        self.initialized = False
+        
     def initialize(self):
         """Initialize level-specific resources."""
         print("Colors Level: Initializing resources")
         
-        # Load fonts using resource manager
-        self.small_font = self.resource_manager.get_font("small")
-        self.ghost_font = self.resource_manager.get_font("large")
+        # Set the current level in the resource manager
+        self.resource_manager.set_current_level("COLORS_LEVEL")
+        
+        # Preload all fonts needed for this level
+        level_resources = {
+            "fonts": [
+                ("small", False),
+                ("large", False),
+                ("medium", False)  # Used for HUD display
+            ]
+        }
+        
+        # Preload level resources
+        self.resource_manager.preload_level_resources("COLORS_LEVEL", level_resources)
+        
+        # Get the fonts - they'll be automatically associated with this level
+        self.small_font = self.resource_manager.get_font("small", False, "COLORS_LEVEL")
+        self.ghost_font = self.resource_manager.get_font("large", False, "COLORS_LEVEL")
         
         # Select initial target color
         self._select_target_color()
         
+        # Reset level state
+        self.dots = []
+        self.dots_state = DotsState.MOTHER_VIBRATION
+        self.state_timer = VIBRATION_FRAMES
+        self.disperse_particles = []
+        self.ghost_notification = None
+        self.grid = {}
+        self.used_colors = []
+        self.target_dots_left = 10
+        self.overall_destroyed = 0
+        self.current_color_dots_destroyed = 0
+        self.total_dots_destroyed = 0
+        self.collision_enabled = False
+        self.collision_timer = 0
+        self.color_changed = False
+        
+        # Print memory usage
+        print(f"Colors Level: Resource stats after initialization: {self.resource_manager.get_resource_stats()}")
+        
+        self.initialized = True
         return True
         
     def update(self, delta_time):
@@ -254,9 +296,24 @@ class ColorsLevel:
     def cleanup(self):
         """Clean up level-specific resources."""
         print("Colors Level: Cleanup")
+        
+        # Clear game objects
         self.dots = []
         self.disperse_particles = []
         self.ghost_notification = None
+        
+        # Release references to fonts
+        self.small_font = None
+        self.ghost_font = None
+        
+        # Unload level-specific resources through resource manager
+        if self.resource_manager:
+            self.resource_manager.unload_level_resources("COLORS_LEVEL")
+            
+            # Print memory stats after cleanup
+            print(f"Colors Level: Resource stats after cleanup: {self.resource_manager.get_resource_stats()}")
+        
+        self.initialized = False
         return True
         
     def _initialize_dispersion(self):

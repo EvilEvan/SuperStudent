@@ -56,39 +56,55 @@ except:
     # If file doesn't exist or can't be read, use auto-detection
     DISPLAY_MODE = detect_display_type()
 
-# Function to initialize font and resource sizes based on display mode
 def init_resources():
+    """
+    Initialize game resources based on the current display mode.
+    Now uses ResourceManager for better resource management.
+    """
     global font_sizes, fonts, large_font, small_font, TARGET_FONT, TITLE_FONT
     global MAX_PARTICLES, MAX_EXPLOSIONS, MAX_SWIRL_PARTICLES, mother_radius
     
+    # Import ResourceManager here to avoid circular imports
+    from utils.resource_manager import ResourceManager
+    
+    # Get or create the resource manager singleton
+    resource_manager = ResourceManager()
+    
+    # Set the current display mode in the resource manager
+    resource_manager.set_display_mode(DISPLAY_MODE)
+    
+    # Handle mode-specific settings
     if DISPLAY_MODE == "DEFAULT":
-        # Default size for regular monitors
-        font_sizes = [130, 135, 140, 145, 105]
-        fonts = [pygame.font.Font(None, size) for size in font_sizes]
-        large_font = pygame.font.Font(None, 150)
-        small_font = pygame.font.Font(None, 36)
-        TARGET_FONT = pygame.font.Font(None, 210)
-        TITLE_FONT = pygame.font.Font(None, 320)
-        
         # Adjust particle counts and sizes for default display
         MAX_PARTICLES = 200
         MAX_EXPLOSIONS = 5
         MAX_SWIRL_PARTICLES = 75
         mother_radius = 90
-    else:  # "QBOARD"
-        # Larger size for Qboard display
-        font_sizes = [260, 270, 280, 290, 210]
-        fonts = [pygame.font.Font(None, size) for size in font_sizes]
-        large_font = pygame.font.Font(None, 300)
-        small_font = pygame.font.Font(None, 36)
-        TARGET_FONT = pygame.font.Font(None, 420)
-        TITLE_FONT = pygame.font.Font(None, 640)
         
+        # Initialize font sizes array for compatibility with existing code
+        font_sizes = [130, 135, 140, 145, 105]
+    else:  # "QBOARD"
         # Qboard uses more particles and larger resources
         MAX_PARTICLES = 400
         MAX_EXPLOSIONS = 10
         MAX_SWIRL_PARTICLES = 150
         mother_radius = 180
+        
+        # Initialize font sizes array for compatibility with existing code
+        font_sizes = [260, 270, 280, 290, 210]
+    
+    # Load fonts using the resource manager for the 'global' context
+    fonts = []
+    for size_idx, size in enumerate(font_sizes):
+        # Create a custom font type for each size
+        font_type = f"size_{size_idx}"
+        fonts.append(resource_manager.get_font(font_type))
+    
+    # Load specific fonts
+    large_font = resource_manager.get_font("large")
+    small_font = resource_manager.get_font("small")
+    TARGET_FONT = resource_manager.get_font("target")
+    TITLE_FONT = resource_manager.get_font("title")
     
     # Save the display mode preference
     try:
@@ -96,9 +112,34 @@ def init_resources():
             f.write(DISPLAY_MODE)
     except:
         pass  # If can't write, silently continue
+    
+    print(f"Resources initialized for display mode: {DISPLAY_MODE}")
+    
+    # Return the resource manager for use in other parts of the code
+    return resource_manager
+
+def cleanup_resources():
+    """
+    Clean up all loaded resources to free memory.
+    This should be called when transitioning between game states or modes.
+    """
+    # Import ResourceManager here to avoid circular imports
+    from utils.resource_manager import ResourceManager
+    
+    # Get the resource manager singleton
+    resource_manager = ResourceManager()
+    
+    # Clean up all resources
+    resource_manager.cleanup()
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    print("Resources cleaned up successfully")
 
 # Initialize resources with current mode
-init_resources()
+resource_manager = init_resources()
 
 # OPTIMIZATION: Global particle system limits to prevent lag
 PARTICLE_CULLING_DISTANCE = WIDTH  # Distance at which to cull offscreen particles

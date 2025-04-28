@@ -214,10 +214,37 @@ class Game:
         # Skip if already in this state
         if new_state == self.current_state:
             return
+            
+        previous_state = self.current_state
         
-        # Clean up the current screen
+        # Clean up the current screen and its resources
         if self.current_screen:
+            print(f"Game: Cleaning up resources for {previous_state}")
             self.current_screen.cleanup()
+            
+            # Additional resource cleanup for levels that may not handle it properly
+            if previous_state in [
+                GameState.ALPHABET_LEVEL, 
+                GameState.NUMBERS_LEVEL, 
+                GameState.SHAPES_LEVEL, 
+                GameState.CLCASE_LEVEL, 
+                GameState.COLORS_LEVEL
+            ]:
+                # Ensure level resources are unloaded
+                if previous_state == GameState.ALPHABET_LEVEL:
+                    self.resource_manager.unload_level_resources("ALPHABET_LEVEL")
+                elif previous_state == GameState.NUMBERS_LEVEL:
+                    self.resource_manager.unload_level_resources("NUMBERS_LEVEL")
+                elif previous_state == GameState.SHAPES_LEVEL:
+                    self.resource_manager.unload_level_resources("SHAPES_LEVEL")
+                elif previous_state == GameState.CLCASE_LEVEL:
+                    self.resource_manager.unload_level_resources("CLCASE_LEVEL")
+                elif previous_state == GameState.COLORS_LEVEL:
+                    self.resource_manager.unload_level_resources("COLORS_LEVEL")
+                    
+            # Force garbage collection to free up memory
+            import gc
+            gc.collect()
         
         # Handle special case for QUIT
         if new_state == GameState.QUIT:
@@ -226,9 +253,18 @@ class Game:
         
         # Change to the new state
         self.current_state = new_state
+        print(f"Game: Changing state from {previous_state} to {new_state}")
+        
+        # In debug mode, log memory usage before initializing new state
+        if DEBUG_MODE:
+            print(f"Game: Resource stats before initializing {new_state}: {self.resource_manager.get_resource_stats()}")
         
         # Initialize the new screen or level
         self._initialize_current()
+        
+        # In debug mode, log memory usage after initialization
+        if DEBUG_MODE:
+            print(f"Game: Resource stats after initializing {new_state}: {self.resource_manager.get_resource_stats()}")
 
 
 if __name__ == "__main__":
