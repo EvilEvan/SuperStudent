@@ -95,6 +95,7 @@ MOTHER_RADIUS = {
 
 # Dot properties
 DOT_RADIUS = 24
+DOT_CLICK_RADIUS = 38  # Larger non-visible click radius (about 160% of visible radius)
 DOT_SPEED_RANGE = (-6, 6)
 DOT_SPEED_REDUCTION = 0.8  # 20% speed reduction on collision
 

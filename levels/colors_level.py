@@ -12,7 +12,7 @@ from enum import Enum, auto
 # In the actual implementation, these would be imported from settings.py
 from settings import (
     BLACK, WHITE, COLORS_LIST, COLOR_NAMES, CHECKPOINT_TRIGGER,
-    DOT_RADIUS, DOT_SPEED_RANGE, DOT_SPEED_REDUCTION,
+    DOT_RADIUS, DOT_CLICK_RADIUS, DOT_SPEED_RANGE, DOT_SPEED_REDUCTION,
     MOTHER_RADIUS, VIBRATION_FRAMES, DISPERSE_FRAMES,
     ENABLE_COLLISION_GRID, COLLISION_GRID_SIZE, COLORS_COLLISION_DELAY
 )
@@ -287,7 +287,7 @@ class ColorsLevel:
                 for dot in self.dots:
                     if dot["alive"]:
                         dist = math.hypot(mx - dot["x"], my - dot["y"])
-                        if dist <= dot["radius"]:
+                        if dist <= DOT_CLICK_RADIUS:  # Use larger non-visible click radius
                             hit_target = True
                             if dot["target"]:
                                 result = self._handle_target_hit(dot)
@@ -317,7 +317,7 @@ class ColorsLevel:
                 for dot in self.dots:
                     if dot["alive"]:
                         dist = math.hypot(touch_x - dot["x"], touch_y - dot["y"])
-                        if dist <= dot["radius"]:
+                        if dist <= DOT_CLICK_RADIUS:  # Use larger non-visible click radius
                             hit_target = True
                             if dot["target"]:
                                 result = self._handle_target_hit(dot)
