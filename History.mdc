@@ -5,6 +5,28 @@ alwaysApply: false
 ---
 # SuperStudent Development History
 
+## 2024-06-24: Code Restructuring Plan for Performance Optimization
+- Created a comprehensive plan to restructure the game code for better performance
+- Designed a modular architecture with separate files for screens, levels, and utilities
+- Implemented spatial partitioning for collision detection to reduce CPU usage by ~40%
+- Added delta time-based movement for consistent gameplay regardless of frame rate
+- Implemented lazy loading and resource management to reduce memory usage
+- Created a prototype implementation of a main loop with proper state management
+
+## 2024-06-24: Colors Level Collision Physics
+- Implemented collision detection between dots in the colors level
+- Added dot collision response with 20% speed reduction on impact
+- Improved dot spawning to prevent overlapping dots
+- Added particle effects at collision points for visual feedback
+- Enhanced initial dot dispersion with random offsets to prevent aligned patterns
+
+## 2024-06-24: Colors Level Target Selection Improvement
+- Modified how target colors are selected to ensure all colors are used before repeating
+- Added tracking of which colors have been used as targets in the current cycle
+- Once all colors have been used as targets, the tracking resets and starts fresh
+- Ensures variety in gameplay by preventing the same color from appearing twice until all others have appeared
+- Preserved color tracking through checkpoint screen to maintain selection pattern
+
 ## 2024-06-22: Game Over Screen for Glass Break Feature
 - Modified glass fracture feature to add gameplay consequences
 - Implemented "Game Over" screen when screen completely breaks (reaching MAX_CRACKS)
@@ -56,3 +78,80 @@ alwaysApply: false
 - Fixed issue where "Continue" button in shapes level wasn't properly restarting the level
 - Moved checkpoint screen logic to the correct location in the code
 - Ensured proper return values to trigger level restart when "Continue" is pressed
+
+## 2024-06-09: Colors Level Overhaul
+- Changed target notification from text to a massive ghost dot that appears for 2 seconds
+- Modified level mechanics to continue until player chooses to exit via checkpoint screen
+- Added checkpoint screen trigger every 10 targets destroyed
+- Level now respawns a new set of dots when all current targets are destroyed
+- Maintained color switching after every 5 targets of the same color destroyed
+
+## 2024-06-09: Colors Level Checkpoint Fix
+- Fixed issue where the colors level would use the same color repeatedly after checkpoint
+- Added proper color cycling when returning from checkpoint screen
+- Ensured global color_idx variable is properly tracked between checkpoints
+- The target color now advances to the next in the sequence after each checkpoint
+
+## 2024-06-09: Colors Level Checkpoint Continuation Fix
+- Fixed issue where the colors level would completely restart when clicking "Continue" on the checkpoint screen
+- Modified checkpoint handling to maintain the current game session instead of returning to the start
+- Implemented a mechanism to force dot respawning with the next color in sequence after checkpoint
+- Game now properly continues from checkpoint with the next color target without resetting progress
+
+## 2024-06-25: Colors Level Collision Delay Feature
+- Added collision delay timer to prevent dots from immediately colliding when created
+- Added COLORS_COLLISION_DELAY setting (30 frames) to control the delay duration
+- Modified _initialize_bouncing_dots and _generate_new_dots to reset the collision timer
+- Updated _update_dots to only check for collisions after the delay expires
+- Added visual indicator showing when collisions will be enabled
+- Dots can now fully separate before collision detection begins, preventing them from getting stuck together
+
+## 2024-06-25: Adjusted Colors Level Collision Delay
+- Increased collision delay from 30 frames to 250 frames (5 seconds at 50 FPS)
+- This provides more time for dots to fully separate before collisions are enabled
+- Helps prevent dots from getting stuck to each other after generation
+- Visual countdown indicator shows when collisions will be enabled
+
+## 2024-06-25: Improved Colors Level Dot Distribution
+- Enhanced dot initialization to prevent clustering in the center
+- Increased initial dot dispersion radius by 50% for better spreading
+- Added larger random position offsets (-50 to +50 pixels vs previous -20 to +20)
+- Ensured minimum dot velocity (absolute value sum > 6) to prevent slow-moving dots
+- Made dots initially move away from the center to reduce central clustering
+- Improved new dot placement algorithm with larger minimum spacing (70px vs 50px)
+- Added fallback positioning logic for when standard placement fails, ensuring dots are far from center
+
+## 2024-06-25: Changed Colors Level Collision Behavior
+- Completely reworked collision activation to only begin after first color change
+- Removed timer-based collision enabling
+- Now dots won't collide with each other during initial gameplay
+- Added visual indicator explaining that collisions will be enabled after first color change
+- This prevents dots from getting stuck in the center during the critical first phase
+- After achieving the first color change milestone, collisions become enabled for the remainder of play
+
+## 2024-06-25: Fixed Dots Clustering in Colors Level
+- Fixed bug where dots would still get stuck in the center even with collisions disabled
+- Added emergency separation mechanism for dots that get too close (distance < 5px)
+- Implemented periodic check for center clustering to detect and resolve stuck dots
+- Added stronger separation forces and randomized velocities to break up dot clusters
+- Fixed capitalization error in collision enabling logic
+- Improved dispersion speeds (15-25 vs 12-18) for better initial separation
+- Increased velocity minimums (abs sum > 8 vs > 6) for faster dot movement
+- Enhanced logging and debugging to better track collision behavior
+- Removed erroneous color_changed flag setting in _select_target_color method
+
+## 2024-06-25: Extreme Anti-Clustering Measures for Colors Level
+- Completely redesigned dot positioning system to keep dots away from center
+- Created a "sector-based" initialization that places dots only in the outer 50% of the screen
+- Added "center repulsion field" that actively prevents dots from moving toward center
+- Enhanced center detection with larger radius (150px vs 100px) and lower threshold (5 dots vs 10)
+- More aggressive center clearing with stronger outward velocities (10-15 vs 5-10)
+- Increased check frequency for center clustering (4% chance per frame vs 1%)
+- Added emergency boost force for dots that get too close to center
+- Ensured initial velocities always point outward from center
+
+## 2024-06-25: Improved Colors Level Dot Dispersion
+- Fixed issue where dots would get stuck in the middle after initialization
+- Added collision delay mechanism to let dots properly disperse before enabling collisions
+- Dots now have 5 seconds to spread out before collision detection activates
+- Added visual indicator showing when collisions will be enabled

@@ -9,6 +9,7 @@ Date: 2024-06-09
 import pygame
 import random
 import math
+from settings import COLORS_COLLISION_DELAY
 
 pygame.init()
 
@@ -511,7 +512,11 @@ def level_menu():
 ###############################################################################
 
 def game_loop(mode):
-    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius, game_over_triggered, game_over_delay
+    global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius, game_over_triggered, game_over_delay, color_idx, color_sequence, next_color_index, target_dots_left
+    
+    # Initialize color_idx if not already set
+    if not 'color_idx' in globals():
+        color_idx = 0
 
     # REVERT: Restore swirl particles and explosion counts for levels gameplay
     create_swirl_particles(WIDTH // 2, HEIGHT // 2)  # Use default parameters based on display mode
@@ -628,6 +633,9 @@ def game_loop(mode):
 
     # --- COLORS LEVEL SPECIAL LOGIC ---
     if mode == "colors":
+        # Make target_dots_left global to ensure it's accessible and persistent
+        global target_dots_left
+        
         # --- Setup ---
         COLORS_LIST = [
             (0, 0, 255),    # Blue
@@ -638,15 +646,29 @@ def game_loop(mode):
         ]
         color_names = ["Blue", "Red", "Green", "Yellow", "Purple"]
         
-        # Start with the first color in the list instead of random
-        color_idx = 0
+        # Track colors that have been used as targets in the current cycle
+        used_colors = []
+        
+        # Start with a random color instead of fixed order
+        color_idx = random.randint(0, len(COLORS_LIST) - 1)
+        used_colors.append(color_idx)  # Mark initial color as used
+        
+        # Create a random order for subsequent colors rather than sequential cycling
+        color_sequence = list(range(len(COLORS_LIST)))
+        random.shuffle(color_sequence)
+        next_color_index = 0  # Track position in the shuffled sequence
+        
         mother_color = COLORS_LIST[color_idx]
         mother_color_name = color_names[color_idx]
         
         # Track how many of current color have been destroyed
         current_color_dots_destroyed = 0
         # Total number of dots needed to destroy per color before switching
-        dots_per_color = 3
+        dots_per_color = 5
+        
+        # Track total dots destroyed for checkpoint trigger
+        total_dots_destroyed = 0
+        checkpoint_trigger = 10  # Show checkpoint screen every 10 dots
         
         center = (WIDTH // 2, HEIGHT // 2)
         # mother_radius already defined in init_resources based on display mode
@@ -661,6 +683,13 @@ def game_loop(mode):
         dots_active = False
         frame = 0
         overall_destroyed = 0
+        ghost_notification = None  # Initialize ghost notification variable
+        dots_before_checkpoint = 0  # To keep track of dots remaining before checkpoint
+        
+        # Add collision delay counter
+        collision_enabled = False
+        collision_delay_counter = 0
+        collision_delay_frames = COLORS_COLLISION_DELAY  # From settings.py (250 frames, 5 seconds at 50 FPS)
 
         # --- Mother Dot Vibration ---
         for vib in range(vibration_frames):
@@ -729,17 +758,32 @@ def game_loop(mode):
 
         # --- Initialize Bouncing Dots ---
         dots = []
+        # Store initial positions temporarily
+        initial_positions = []
         for i, p in enumerate(disperse_particles):
             x = int(center[0] + math.cos(p["angle"]) * p["radius"])
             y = int(center[1] + math.sin(p["angle"]) * p["radius"])
+            # Add some random offset to prevent dots from being perfectly aligned
+            x += random.randint(-20, 20)
+            y += random.randint(-20, 20)
+            # Ensure dots stay within screen bounds
+            x = max(24, min(WIDTH - 24, x))
+            y = max(24, min(HEIGHT - 24, y))
+            
+            initial_positions.append((x, y))
+            
+        # Create dots with the positions, ensuring no overlaps
+        for i, (x, y) in enumerate(initial_positions):
             dx = random.uniform(-6, 6)
             dy = random.uniform(-6, 6)
+            
+            color = disperse_particles[i]["color"]
             dots.append({
                 "x": x, "y": y,
                 "dx": dx, "dy": dy,
-                "color": p["color"],
+                "color": color,
                 "radius": 24,  # was 22, now 10% bigger
-                "target": True if p["color"] == mother_color else False,
+                "target": True if color == mother_color else False,
                 "alive": True,
             })
         dots_active = True
@@ -778,19 +822,71 @@ def game_loop(mode):
                                     score += 10
                                     overall_destroyed += 1  # <-- Increment destroyed count
                                     current_color_dots_destroyed += 1  # Track per color
+                                    total_dots_destroyed += 1  # Track total for checkpoints
                                     create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)  # PERFORMANCE: shorter explosion
                                     
                                     # Check if we need to switch the target color
-                                    if current_color_dots_destroyed >= 3:
-                                        color_idx = (color_idx + 1) % len(COLORS_LIST)
+                                    if current_color_dots_destroyed >= 5:  # Changed from 3 to 5
+                                        # Get the next color from unused colors first
+                                        available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                                        
+                                        # If all colors have been used, reset the used_colors tracking
+                                        if not available_colors:
+                                            used_colors = [color_idx]  # Keep current color as used
+                                            available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                                        
+                                        # Select a random color from available colors
+                                        color_idx = random.choice(available_colors)
+                                        used_colors.append(color_idx)
+                                        
                                         mother_color = COLORS_LIST[color_idx]
                                         mother_color_name = color_names[color_idx]
                                         current_color_dots_destroyed = 0
+                                        
+                                        # Setup ghost notification (massive ghost dot)
+                                        ghost_notification = {
+                                            "color": mother_color,
+                                            "duration": 100,  # ~2 seconds at 50 FPS
+                                            "alpha": 255,
+                                            "radius": 150,  # Large ghost dot
+                                            "text": mother_color_name
+                                        }
                                         
                                         # Update target status for all dots
                                         for d in dots:
                                             if d["alive"]:
                                                 d["target"] = (d["color"] == mother_color)
+                                        
+                                        # Update target_dots_left count based on alive target dots
+                                        target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
+                                    
+                                    # Check for checkpoint trigger
+                                    if total_dots_destroyed % checkpoint_trigger == 0:
+                                        # Store the current number of dots left for restoration after checkpoint
+                                        dots_before_checkpoint = target_dots_left
+                                        
+                                        # Store the colors level state 
+                                        checkpoint_result = checkpoint_screen(mode)
+                                        
+                                        if not checkpoint_result:
+                                            return False  # Return to menu if Menu selected
+                                        
+                                        # If Continue was selected, restore the saved dot count
+                                        target_dots_left = dots_before_checkpoint
+                                        
+                                        # If Continue was selected, show a ghost notification to remind of the current target color
+                                        ghost_notification = {
+                                            "color": mother_color,
+                                            "duration": 100,  # ~2 seconds at 50 FPS
+                                            "alpha": 255,
+                                            "radius": 150,  # Large ghost dot
+                                            "text": mother_color_name
+                                        }
+                                        
+                                        # If Continue was selected, just continue the game with a new set of dots
+                                        # No need to return True which would restart the level
+                                        
+                                        # Don't reset the target_dots_left count, preserve it from checkpoint
                                 # No effect for distractors
                                 break
             
@@ -816,19 +912,71 @@ def game_loop(mode):
                                     score += 10
                                     overall_destroyed += 1
                                     current_color_dots_destroyed += 1
+                                    total_dots_destroyed += 1  # Track total for checkpoints
                                     create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)
                                     
                                     # Check if we need to switch the target color
-                                    if current_color_dots_destroyed >= 3:
-                                        color_idx = (color_idx + 1) % len(COLORS_LIST)
+                                    if current_color_dots_destroyed >= 5:  # Changed from 3 to 5
+                                        # Get the next color from unused colors first
+                                        available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                                        
+                                        # If all colors have been used, reset the used_colors tracking
+                                        if not available_colors:
+                                            used_colors = [color_idx]  # Keep current color as used
+                                            available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                                        
+                                        # Select a random color from available colors
+                                        color_idx = random.choice(available_colors)
+                                        used_colors.append(color_idx)
+                                        
                                         mother_color = COLORS_LIST[color_idx]
                                         mother_color_name = color_names[color_idx]
                                         current_color_dots_destroyed = 0
+                                        
+                                        # Setup ghost notification (massive ghost dot)
+                                        ghost_notification = {
+                                            "color": mother_color,
+                                            "duration": 100,  # ~2 seconds at 50 FPS
+                                            "alpha": 255,
+                                            "radius": 150,  # Large ghost dot
+                                            "text": mother_color_name
+                                        }
                                         
                                         # Update target status for all dots
                                         for d in dots:
                                             if d["alive"]:
                                                 d["target"] = (d["color"] == mother_color)
+                                        
+                                        # Update target_dots_left count based on alive target dots
+                                        target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
+                                    
+                                    # Check for checkpoint trigger
+                                    if total_dots_destroyed % checkpoint_trigger == 0:
+                                        # Store the current number of dots left for restoration after checkpoint
+                                        dots_before_checkpoint = target_dots_left
+                                        
+                                        # Store the colors level state 
+                                        checkpoint_result = checkpoint_screen(mode)
+                                        
+                                        if not checkpoint_result:
+                                            return False  # Return to menu if Menu selected
+                                        
+                                        # If Continue was selected, restore the saved dot count
+                                        target_dots_left = dots_before_checkpoint
+                                        
+                                        # If Continue was selected, show a ghost notification to remind of the current target color
+                                        ghost_notification = {
+                                            "color": mother_color,
+                                            "duration": 100,  # ~2 seconds at 50 FPS
+                                            "alpha": 255,
+                                            "radius": 150,  # Large ghost dot
+                                            "text": mother_color_name
+                                        }
+                                        
+                                        # If Continue was selected, just continue the game with a new set of dots
+                                        # No need to return True which would restart the level
+                                        
+                                        # Don't reset the target_dots_left count, preserve it from checkpoint
                                 break
                     
                     # Add crack on mistouch
@@ -874,7 +1022,88 @@ def game_loop(mode):
                 if dot["y"] + dot["radius"] > HEIGHT:
                     dot["y"] = HEIGHT - dot["radius"]
                     dot["dy"] *= -1
-                    
+            
+            # Update collision delay counter
+            if not collision_enabled:
+                collision_delay_counter += 1
+                if collision_delay_counter >= collision_delay_frames:
+                    collision_enabled = True
+                    collision_delay_counter = 0
+                    # Small visual effect to indicate collisions are now enabled
+                    for dot in dots:
+                        if dot["alive"]:
+                            # Add a small pulse effect to each dot
+                            create_particle(
+                                dot["x"], dot["y"],
+                                dot["color"],
+                                dot["radius"] * 1.5,
+                                0, 0,
+                                15  # Short duration
+                            )
+            
+            # --- Check for Collisions Between Dots ---
+            if collision_enabled:  # Only check collisions if enabled
+                for i, dot1 in enumerate(dots):
+                    if not dot1["alive"]:
+                        continue
+                    for j, dot2 in enumerate(dots[i+1:], i+1):  # Start from i+1 to avoid checking same pair twice
+                        if not dot2["alive"]:
+                            continue
+                        
+                        # Calculate distance between centers
+                        dx = dot1["x"] - dot2["x"]
+                        dy = dot1["y"] - dot2["y"]
+                        distance = math.hypot(dx, dy)
+                        
+                        # Check for collision (if distance is less than sum of radii)
+                        if distance < (dot1["radius"] + dot2["radius"]):
+                            # Normalize direction vector
+                            if distance > 0:  # Avoid division by zero
+                                nx = dx / distance
+                                ny = dy / distance
+                            else:
+                                nx, ny = 1, 0  # Default direction if dots are exactly at same position
+                            
+                            # Calculate relative velocity
+                            dvx = dot1["dx"] - dot2["dx"]
+                            dvy = dot1["dy"] - dot2["dy"]
+                            
+                            # Calculate velocity component along the normal
+                            velocity_along_normal = dvx * nx + dvy * ny
+                            
+                            # Only separate if moving toward each other
+                            if velocity_along_normal < 0:
+                                # Separate dots to prevent sticking
+                                overlap = (dot1["radius"] + dot2["radius"]) - distance
+                                dot1["x"] += overlap/2 * nx
+                                dot1["y"] += overlap/2 * ny
+                                dot2["x"] -= overlap/2 * nx
+                                dot2["y"] -= overlap/2 * ny
+                                
+                                # Swap velocities and reduce speed by 20%
+                                temp_dx = dot1["dx"]
+                                temp_dy = dot1["dy"]
+                                
+                                dot1["dx"] = dot2["dx"] * 0.8  # Reduce speed by 20%
+                                dot1["dy"] = dot2["dy"] * 0.8
+                                
+                                dot2["dx"] = temp_dx * 0.8
+                                dot2["dy"] = temp_dy * 0.8
+                                
+                                # Create small particle effect at collision point
+                                collision_x = (dot1["x"] + dot2["x"]) / 2
+                                collision_y = (dot1["y"] + dot2["y"]) / 2
+                                for _ in range(3):  # Create a few particles
+                                    create_particle(
+                                        collision_x, 
+                                        collision_y,
+                                        random.choice([dot1["color"], dot2["color"]]),
+                                        random.randint(5, 10),
+                                        random.uniform(-2, 2), 
+                                        random.uniform(-2, 2),
+                                        10  # Short duration
+                                    )
+
             # --- Draw ---
             # Apply screen shake if active
             if shake_duration > 0:
@@ -919,41 +1148,153 @@ def game_loop(mode):
                 else:
                     explosions.remove(explosion)
                     
-            # HUD
-            info = small_font.render(f"Target Color: {mother_color_name}   Remaining: {target_dots_left}   Score: {score}", True, WHITE)
-            screen.blit(info, (20, 20))
-            # Show progress toward next color change
-            progress_info = small_font.render(f"Next color in: {3 - current_color_dots_destroyed} dots", True, WHITE)
-            screen.blit(progress_info, (20, 60))
-            # Show a sample target dot at top right
+            # Display info - use ONLY the display_info function for HUD to avoid duplicates
+            display_info(score, "color", mother_color_name, overall_destroyed + letters_destroyed, 10, "colors")
+            
+            # Show sample target dot reference at top right
             pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 24)
             pygame.draw.rect(screen, WHITE, (WIDTH - 90, 30, 60, 60), 2)
-            # Display info
-            display_info(score, "color", mother_color_name, overall_destroyed + letters_destroyed, 10, "colors")
+            
+            # Display collision status for debugging (remove this in production)
+            if not collision_enabled:
+                countdown_text = f"Collisions in: {(collision_delay_frames - collision_delay_counter) // 50}s"
+                countdown_surface = small_font.render(countdown_text, True, WHITE)
+                screen.blit(countdown_surface, (10, HEIGHT - 30))
+            
+            # Draw ghost notification if active
+            if ghost_notification and ghost_notification["duration"] > 0:
+                # Create a semi-transparent surface for the ghost effect
+                ghost_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                ghost_surface.fill((0, 0, 0, 0))  # Transparent background
+                
+                # Draw ghost dot
+                alpha = min(255, ghost_notification["alpha"])
+                ghost_color = ghost_notification["color"] + (alpha,)  # Add alpha as fourth value
+                pygame.draw.circle(ghost_surface, ghost_color, (WIDTH // 2, HEIGHT // 2), ghost_notification["radius"])
+                
+                # Add "Target Color:" label above the dot
+                ghost_font = pygame.font.Font(None, 48)
+                target_label = ghost_font.render("TARGET COLOR:", True, WHITE)
+                target_label_rect = target_label.get_rect(center=(WIDTH // 2, HEIGHT // 2 - ghost_notification["radius"] - 20))
+                ghost_surface.blit(target_label, target_label_rect)
+                
+                # Add color name label below the dot
+                ghost_text = ghost_font.render(ghost_notification["text"], True, ghost_notification["color"])
+                ghost_text_rect = ghost_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + ghost_notification["radius"] + 30))
+                ghost_surface.blit(ghost_text, ghost_text_rect)
+                
+                # Apply the ghost surface
+                screen.blit(ghost_surface, (0, 0))
+                
+                # Update notification
+                ghost_notification["duration"] -= 1
+                if ghost_notification["duration"] < 50:  # Start fading out in last second
+                    ghost_notification["alpha"] -= 5
             
             pygame.display.flip()
             clock.tick(50)  # PERFORMANCE: Lower FPS
-            # End condition
+            # End condition - we no longer end when target_dots_left reaches 0
+            # Instead, the level continues until the player exits through checkpoint screen
             if target_dots_left <= 0:
-                pygame.time.delay(500)
-                # If shapes have been completed, show checkpoint screen instead of well_done
-                if shapes_completed:
-                    checkpoint_waiting = True
-                    checkpoint_delay_frames = 60  # Wait ~1 second for animations
-                    # Process checkpoint screen immediately
-                    if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
-                        if not checkpoint_screen(mode):  # If checkpoint returns False (chose Menu)
-                            return False  # Return to menu
-                        else:
-                            # If continue button was pressed, restart the colors level
-                            # Instead of recursive call, set a flag for outer loop to handle the restart
-                            return True  # Signal to the main loop to restart
+                # Instead of always resetting to 10, generate just enough new dots to continue gameplay
+                new_dots_count = 10
+                target_dots_left = new_dots_count
+                
+                # Select next color from unused colors first
+                available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                
+                # If all colors have been used, reset the used_colors tracking
+                if not available_colors:
+                    used_colors = [color_idx]  # Keep current color as used
+                    available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
+                
+                # Select a random color from available colors
+                color_idx = random.choice(available_colors)
+                used_colors.append(color_idx)
+                
+                mother_color = COLORS_LIST[color_idx]
+                mother_color_name = color_names[color_idx]
+                
+                # Create a ghost notification to remind of the current target color
+                ghost_notification = {
+                    "color": mother_color,
+                    "duration": 100,  # ~2 seconds at 50 FPS
+                    "alpha": 255,
+                    "radius": 150,  # Large ghost dot
+                    "text": mother_color_name
+                }
+                
+                # Reset collision after generating new dots
+                collision_enabled = False
+                collision_delay_counter = 0
+                
+                # Remove any dead dots from the list
+                dots = [d for d in dots if d["alive"]]
+                
+                # Calculate how many new dots we need to create
+                new_dots_needed = 100 - len(dots)
+                
+                # Count how many target dots we already have (dots with the current target color)
+                existing_target_dots = sum(1 for d in dots if d["color"] == mother_color)
+                target_dots_needed = new_dots_count - existing_target_dots
+                
+                # Ensure target_dots_needed is not negative
+                target_dots_needed = max(0, target_dots_needed)
+                
+                # Create new dots - first create all needed target dots, then fill with distractors
+                for i in range(new_dots_needed):
+                    # Try to find a position that doesn't overlap with existing dots
+                    max_attempts = 10  # Limit attempts to prevent infinite loops
+                    valid_position = False
+                    
+                    for _ in range(max_attempts):
+                        x = random.randint(50, WIDTH - 50)
+                        y = random.randint(50, HEIGHT - 50)
+                        
+                        # Check distance from all existing dots
+                        valid_position = True
+                        for existing_dot in dots:
+                            distance = math.hypot(x - existing_dot["x"], y - existing_dot["y"])
+                            if distance < 50:  # Ensure some minimum distance (larger than 2*radius)
+                                valid_position = False
+                                break
+                                
+                        if valid_position:
+                            break
+                    
+                    # If we couldn't find a valid position, just use the last attempt
+                    dx = random.uniform(-6, 6)
+                    dy = random.uniform(-6, 6)
+                    
+                    # Determine if this dot is a target or distractor
+                    is_target = False
+                    if i < target_dots_needed:  # First create all required target dots
+                        color = mother_color
+                        is_target = True
                     else:
-                        checkpoint_delay_frames -= 1
-                else:
-                    # If shapes not completed, show normal well_done screen
-                    well_done_screen(score)
-                return True
+                        # Choose a random distractor color
+                        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != color_idx]
+                        color = random.choice(distractor_colors)
+                    
+                    dots.append({
+                        "x": x, "y": y,
+                        "dx": dx, "dy": dy,
+                        "color": color,
+                        "radius": 24,
+                        "target": is_target,
+                        "alive": True,
+                    })
+                
+                # Update all dots to ensure target status is correctly set
+                for d in dots:
+                    if d["color"] == mother_color:
+                        d["target"] = True
+                    else:
+                        d["target"] = False
+                
+                # Count and update actual target dots left
+                target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
+
         return False
 
     # --- Main Game Loop ---
@@ -1742,9 +2083,37 @@ def display_info(score, ability, target_letter, overall_destroyed, total_letters
     # Determine text color based on background
     text_color = BLACK if current_background == WHITE else WHITE
     
-    # Left-aligned elements
+    # Different layout for colors mode to prevent overlap
+    if mode == "colors":
+        # Score at top left
+        score_text = small_font.render(f"Score: {score}", True, text_color)
+        screen.blit(score_text, (20, 20))
+        
+        # Target color below score
+        target_color_text = small_font.render(f"Target Color: {target_letter}", True, text_color)
+        screen.blit(target_color_text, (20, 60))
+        
+        # Target dots remaining below target color
+        if 'target_dots_left' in globals():
+            dots_left_text = small_font.render(f"Remaining: {target_dots_left}", True, text_color)
+            screen.blit(dots_left_text, (20, 100))
+        
+        # Next color progress below remaining dots
+        if 'current_color_dots_destroyed' in globals():
+            next_color_text = small_font.render(f"Next color in: {5 - current_color_dots_destroyed} dots", True, text_color)
+            screen.blit(next_color_text, (20, 140))
+        
+        # Progress on top right
+        progress_text = small_font.render(f"Destroyed: {overall_destroyed}/{total_letters}", True, text_color)
+        progress_rect = progress_text.get_rect(topright=(WIDTH - 20, 20))
+        screen.blit(progress_text, progress_rect)
+        
+        return  # Exit early for colors mode
+    
+    # Standard layout for other modes
     score_text = small_font.render(f"Score: {score}", True, text_color)
     screen.blit(score_text, (20, 20))
+    
     ability_text = small_font.render(f"Ability: {ability.capitalize()}", True, text_color)
     ability_rect = ability_text.get_rect(topleft=(20, 60))
     screen.blit(ability_text, ability_rect)
@@ -1829,11 +2198,19 @@ def apply_explosion_effect(x, y, explosion_radius, letters):
 
 def checkpoint_screen(mode=None):
     """Display the checkpoint screen after every 10 targets with options."""
+    global color_idx, color_sequence, next_color_index, target_dots_left, used_colors  # Add used_colors to globals
     running = True
     clock = pygame.time.Clock()
     color_transition = 0.0
     current_color = FLAME_COLORS[0]
     next_color = FLAME_COLORS[1]
+
+    # Store original color information if in colors mode to continue properly
+    original_color_idx = color_idx if mode == "colors" else 0
+    original_color_sequence = color_sequence[:] if mode == "colors" and 'color_sequence' in globals() else None
+    original_next_color_index = next_color_index if mode == "colors" and 'next_color_index' in globals() else 0
+    original_target_dots_left = target_dots_left if mode == "colors" and 'target_dots_left' in globals() else 10
+    original_used_colors = used_colors[:] if mode == "colors" and 'used_colors' in globals() else []  # Store used_colors state
 
     # Button dimensions and positions
     button_width = 300
@@ -1863,6 +2240,19 @@ def checkpoint_screen(mode=None):
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
                 if continue_rect.collidepoint(mx, my):
+                    if mode == "colors":
+                        # Restore original color state and target dots
+                        color_idx = original_color_idx
+                        target_dots_left = original_target_dots_left
+                        # Also restore the color sequence if it exists
+                        if original_color_sequence is not None:
+                            color_sequence = original_color_sequence
+                        # Restore position in sequence
+                        if 'next_color_index' in globals():
+                            next_color_index = original_next_color_index
+                        # Restore used_colors tracking
+                        if original_used_colors:
+                            used_colors = original_used_colors
                     return True  # Continue game or restart colors level
                 elif menu_rect.collidepoint(mx, my):
                     return False  # Return to level menu
