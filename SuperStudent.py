@@ -9,7 +9,13 @@ Date: 2024-06-09
 import pygame
 import random
 import math
-from settings import COLORS_COLLISION_DELAY
+from settings import (
+    COLORS_COLLISION_DELAY, DISPLAY_MODES, DEFAULT_MODE, DISPLAY_SETTINGS_PATH,
+    LEVEL_PROGRESS_PATH, MAX_CRACKS, WHITE, BLACK, FLAME_COLORS, LASER_EFFECTS,
+    LETTER_SPAWN_INTERVAL, SEQUENCES, GAME_MODES, GROUP_SIZE,
+    SHAKE_DURATION_MISCLICK, SHAKE_MAGNITUDE_MISCLICK,
+    GAME_OVER_CLICK_DELAY, GAME_OVER_COUNTDOWN_SECONDS
+)
 
 pygame.init()
 
@@ -44,99 +50,78 @@ def detect_display_type():
     return "DEFAULT"
 
 # Initialize with default mode first
-DISPLAY_MODE = "DEFAULT"
+DISPLAY_MODE = DEFAULT_MODE
 
 # Try to load previous display mode setting
 try:
-    with open("display_settings.txt", "r") as f:
+    with open(DISPLAY_SETTINGS_PATH, "r") as f:
         loaded_mode = f.read().strip()
-        if loaded_mode in ["DEFAULT", "QBOARD"]:
+        if loaded_mode in DISPLAY_MODES:
             DISPLAY_MODE = loaded_mode
 except:
     # If file doesn't exist or can't be read, use auto-detection
     DISPLAY_MODE = detect_display_type()
 
+# Import ResourceManager
+from utils.resource_manager import ResourceManager
+from utils.particle_system import ParticleManager
+
+# Initialize particle manager globally
+particle_manager = None
+
 def init_resources():
     """
-    Initialize game resources based on the current display mode.
-    Now uses ResourceManager for better resource management.
+    Initialize game resources based on the current display mode using ResourceManager.
     """
     global font_sizes, fonts, large_font, small_font, TARGET_FONT, TITLE_FONT
     global MAX_PARTICLES, MAX_EXPLOSIONS, MAX_SWIRL_PARTICLES, mother_radius
+    global particle_manager
     
-    # Import ResourceManager here to avoid circular imports
-    from utils.resource_manager import ResourceManager
+    # Import from settings
+    from settings import FONT_SIZES, MAX_PARTICLES as PARTICLES_SETTINGS
+    from settings import MAX_EXPLOSIONS as EXPLOSIONS_SETTINGS
+    from settings import MAX_SWIRL_PARTICLES as SWIRL_SETTINGS
+    from settings import MOTHER_RADIUS
     
-    # Get or create the resource manager singleton
+    # Get resource manager singleton
     resource_manager = ResourceManager()
     
-    # Set the current display mode in the resource manager
+    # Set display mode in the resource manager
     resource_manager.set_display_mode(DISPLAY_MODE)
     
-    # Handle mode-specific settings
-    if DISPLAY_MODE == "DEFAULT":
-        # Adjust particle counts and sizes for default display
-        MAX_PARTICLES = 200
-        MAX_EXPLOSIONS = 5
-        MAX_SWIRL_PARTICLES = 75
-        mother_radius = 90
-        
-        # Initialize font sizes array for compatibility with existing code
-        font_sizes = [130, 135, 140, 145, 105]
-    else:  # "QBOARD"
-        # Qboard uses more particles and larger resources
-        MAX_PARTICLES = 400
-        MAX_EXPLOSIONS = 10
-        MAX_SWIRL_PARTICLES = 150
-        mother_radius = 180
-        
-        # Initialize font sizes array for compatibility with existing code
-        font_sizes = [260, 270, 280, 290, 210]
+    # Initialize mode-specific settings from settings.py
+    MAX_PARTICLES = PARTICLES_SETTINGS[DISPLAY_MODE]
+    MAX_EXPLOSIONS = EXPLOSIONS_SETTINGS[DISPLAY_MODE]
+    MAX_SWIRL_PARTICLES = SWIRL_SETTINGS[DISPLAY_MODE]
+    mother_radius = MOTHER_RADIUS[DISPLAY_MODE]
     
-    # Load fonts using the resource manager for the 'global' context
-    fonts = []
-    for size_idx, size in enumerate(font_sizes):
-        # Create a custom font type for each size
-        font_type = f"size_{size_idx}"
-        fonts.append(resource_manager.get_font(font_type))
+    # Initialize font sizes from settings
+    font_sizes = FONT_SIZES[DISPLAY_MODE]["regular"]
     
-    # Load specific fonts
-    large_font = resource_manager.get_font("large")
-    small_font = resource_manager.get_font("small")
-    TARGET_FONT = resource_manager.get_font("target")
-    TITLE_FONT = resource_manager.get_font("title")
+    # Get core resources
+    resources = resource_manager.initialize_game_resources()
     
-    # Save the display mode preference
+    # Assign resources to global variables for backward compatibility
+    fonts = resources['fonts']
+    large_font = resources['large_font']
+    small_font = resources['small_font']
+    TARGET_FONT = resources['target_font']
+    TITLE_FONT = resources['title_font']
+    
+    # Initialize particle manager with display mode specific settings
+    particle_manager = ParticleManager(max_particles=MAX_PARTICLES)
+    particle_manager.set_culling_distance(WIDTH)  # Set culling distance based on screen size
+    
+    # Save display mode preference
     try:
-        with open("display_settings.txt", "w") as f:
+        with open(DISPLAY_SETTINGS_PATH, "w") as f:
             f.write(DISPLAY_MODE)
     except:
         pass  # If can't write, silently continue
     
     print(f"Resources initialized for display mode: {DISPLAY_MODE}")
     
-    # Return the resource manager for use in other parts of the code
     return resource_manager
-
-def cleanup_resources():
-    """
-    Clean up all loaded resources to free memory.
-    This should be called when transitioning between game states or modes.
-    """
-    # Import ResourceManager here to avoid circular imports
-    from utils.resource_manager import ResourceManager
-    
-    # Get the resource manager singleton
-    resource_manager = ResourceManager()
-    
-    # Clean up all resources
-    resource_manager.cleanup()
-    
-    # Force garbage collection
-    import gc
-    gc.collect()
-    
-    print("Resources cleaned up successfully")
 
 # Initialize resources with current mode
 resource_manager = init_resources()
@@ -152,37 +137,6 @@ for _ in range(100):  # Pre-create some particles to reuse
         "active": False
     })
 
-# Define colors and effects
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-FLAME_COLORS = [
-    (255, 69, 0),    # OrangeRed
-    (255, 140, 0),   # DarkOrange
-    (255, 165, 0),   # Orange
-    (255, 215, 0),   # Gold
-    (255, 255, 0),   # Yellow
-    (138, 43, 226),  # BlueViolet
-    (75, 0, 130),    # Indigo
-    (65, 105, 225)   # RoyalBlue
-]
-
-LASER_EFFECTS = [
-    {"colors": FLAME_COLORS, "widths": [120, 140, 160, 180], "type": "flamethrower"},
-    {"colors": [(173, 216, 230), (135, 206, 250)], "widths": [30, 50], "type": "ice"},
-    {"colors": [(255, 20, 147), (255, 105, 180)], "widths": [40, 60], "type": "pink_magic"},
-]
-
-# Fonts and sizes
-font_sizes = [260, 270, 280, 290, 210]
-fonts = [pygame.font.Font(None, size) for size in font_sizes]
-large_font = pygame.font.Font(None, 300)  # for watermark or big target display
-small_font = pygame.font.Font(None, 36)
-TARGET_FONT = pygame.font.Font(None, 420)  # new font for falling targets (200% bigger)
-TITLE_FONT = pygame.font.Font(None, 640)  # Define a new title font (300% bigger than before based on fonts[2])
-
-# Game constants
-LETTER_SPAWN_INTERVAL = 30  # spawn interval in frames
-
 # Global variables for effects and touches.
 particles = []
 shake_duration = 0
@@ -195,7 +149,6 @@ lasers = []
 
 # Glass cracking effect variables
 glass_cracks = []
-MAX_CRACKS = 15  # Number of cracks needed to shatter the screen
 background_shattered = False
 CRACK_DURATION = 600  # How long the shattered effect lasts (in frames)
 shatter_timer = 0  # Timer for the shattered effect
@@ -555,44 +508,41 @@ def level_menu():
 def game_loop(mode):
     global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius, game_over_triggered, game_over_delay, color_idx, color_sequence, next_color_index, target_dots_left
     
-    # Initialize color_idx if not already set
-    if not 'color_idx' in globals():
-        color_idx = 0
-
-    # REVERT: Restore swirl particles and explosion counts for levels gameplay
-    create_swirl_particles(WIDTH // 2, HEIGHT // 2)  # Use default parameters based on display mode
-
-    # Reset all game states
+    # Reset global effects that could persist between levels
+    shake_duration = 0
+    shake_magnitude = 0
     particles = []
     explosions = []
     lasers = []
-    active_touches = {}
-    charging_ability = False
+    active_touches = {}  # Clear any lingering active touches
+    glass_cracks = []  # Reset glass cracks
+    background_shattered = False  # Reset shattered state
+    mother_radius = 90 # Default radius for mother dot in Colors level
+    color_sequence = []
+    color_idx = 0
+    next_color_index = 0
+    # Don't initialize target_dots_left here since it's handled in the colors level code
+    convergence_timer = 0
     charge_timer = 0
+    convergence_target = None
+    player_color_transition = 0
+    # Initialize player colors with actual values from FLAME_COLORS to avoid ValueError
+    player_current_color = FLAME_COLORS[0]  # Start with first flame color
+    player_next_color = FLAME_COLORS[1]     # Next color will be second flame color
+    charging_ability = False
     charge_particles = []
     ability_target = None
-    swirl_particles = [] # Ensure swirl particles are reset
+    swirl_particles = []
     particles_converging = False
-    convergence_target = None
-    convergence_timer = 0
+    game_over_triggered = False
+    game_over_delay = 0
     
-    # Reset crack variables for clean start
-    glass_cracks = []
-    background_shattered = False
-    shatter_timer = 0
-
-    # Add a flag to prevent checkpoint screen after level completion
-    just_completed_level = False
-
-    # Add checkpoint delay counter
-    checkpoint_delay_frames = 0
-    checkpoint_waiting = False
+    # Initialize player trail particles
+    particles = []
     
-    # Track whether shapes level has been completed
-    shapes_completed = False
     # Try to read from a persistent settings file to check if shapes was completed
     try:
-        with open("level_progress.txt", "r") as f:
+        with open(LEVEL_PROGRESS_PATH, "r") as f:
             progress = f.read().strip()
             if "shapes_completed" in progress:
                 shapes_completed = True
@@ -604,21 +554,10 @@ def game_loop(mode):
     shapes_first_round_completed = False
 
     # Create sequence based on selected mode
-    if mode == "alphabet":
-        sequence = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    elif mode == "numbers":
-        sequence = [str(i) for i in range(1, 27)]
-    elif mode == "shapes":
-        sequence = ["Rectangle", "Square", "Circle", "Triangle", "Pentagon"]
-    elif mode == "clcase":  # New C/L Case letters mode
-        sequence = list("abcdefghijklmnopqrstuvwxyz")
-    elif mode == "colors":  # New Colors mode
-        sequence = []  # Colors mode doesn't use sequence logic
-    else:
-        sequence = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") # Default or fallback
-
-    # Split into groups of 5
-    groups = [sequence[i:i+5] for i in range(0, len(sequence), 5)]
+    sequence = SEQUENCES.get(mode, SEQUENCES["alphabet"])  # Default to alphabet if mode not found
+    
+    # Split into groups of GROUP_SIZE
+    groups = [sequence[i:i+GROUP_SIZE] for i in range(0, len(sequence), GROUP_SIZE)]
 
     # Initialize game variables
     current_group_index = 0
@@ -635,7 +574,7 @@ def game_loop(mode):
     target_letter = letters_to_target[0] if mode != "colors" else None
     TOTAL_LETTERS = len(sequence)
     total_destroyed = 0 # Tracks overall destroyed across all groups
-    overall_destroyed = 0  # <-- Initialize here to avoid UnboundLocalError
+    overall_destroyed = 0
     running = True
 
     clock = pygame.time.Clock()
@@ -653,6 +592,9 @@ def game_loop(mode):
     letters_spawned = 0    # count spawned items in current group
     letters_destroyed = 0  # count destroyed in current group
     last_checkpoint_triggered = 0  # New variable to track checkpoints
+    checkpoint_waiting = False  # Flag to track if we're waiting to show a checkpoint screen
+    checkpoint_delay_frames = 0  # Counter for checkpoint animation delay
+    just_completed_level = False  # Flag to prevent checkpoint triggering right after level completion
     score = 0
     abilities = ["laser", "aoe", "charge_up"]
     current_ability = "laser"
@@ -1905,37 +1847,10 @@ def game_loop(mode):
 
 
         # --- Draw General Particles ---
-        for particle in particles[:]:
-            if particle["duration"] > 0:
-                particle["x"] += particle["dx"]
-                particle["y"] += particle["dy"]
-                particle["duration"] -= 1
-                
-                # Culling optimization: Remove particles that go too far off-screen
-                if (particle["x"] < -PARTICLE_CULLING_DISTANCE or 
-                    particle["x"] > WIDTH + PARTICLE_CULLING_DISTANCE or
-                    particle["y"] < -PARTICLE_CULLING_DISTANCE or 
-                    particle["y"] > HEIGHT + PARTICLE_CULLING_DISTANCE):
-                    particles.remove(particle)
-                    release_particle(particle)
-                    continue
-                
-                # Apply fading effect
-                alpha = max(0, 255 * (particle["duration"] / particle.get("start_duration", 30))) # Fade out
-                color = (*particle["color"][:3], int(alpha))
-
-                # Draw particle with alpha (apply shake offset)
-                # Need to use SRCALPHA surface for transparency
-                size = int(particle["size"])
-                if size > 0:
-                    particle_surf = pygame.Surface((size*2, size*2), pygame.SRCALPHA)
-                    pygame.draw.circle(particle_surf, color, (size, size), size)
-                    screen.blit(particle_surf, (int(particle["x"] - size + offset_x), int(particle["y"] - size + offset_y)))
-
-            else:
-                particles.remove(particle)
-                release_particle(particle)  # Return to pool
-
+        # Use the particle manager instead of manually updating particles
+        particle_manager.update()
+        particle_manager.draw(screen, offset_x, offset_y)
+        
         # --- Display HUD Info ---
         if mode != "colors":
             display_info(score, current_ability, target_letter, overall_destroyed + letters_destroyed, TOTAL_LETTERS, mode) # Pass mode
@@ -2070,7 +1985,7 @@ def game_loop(mode):
     # If the player completes the shapes level, mark it as completed
     if mode == "shapes" and shapes_first_round_completed and not letters and not letters_to_spawn and letters_to_target == []:
         try:
-            with open("level_progress.txt", "w") as f:
+            with open(LEVEL_PROGRESS_PATH, "w") as f:
                 f.write("shapes_completed")
         except:
             # If we can't write to the file, just continue
@@ -2087,7 +2002,7 @@ def game_loop(mode):
     # Original completion check
     elif mode == "shapes" and just_completed_level:
         try:
-            with open("level_progress.txt", "w") as f:
+            with open(LEVEL_PROGRESS_PATH, "w") as f:
                 f.write("shapes_completed")
         except:
             # If we can't write to the file, just continue
@@ -2548,53 +2463,16 @@ def trigger_particle_convergence(target_x, target_y):
         #         })
 
 def get_particle_from_pool():
-    """Get an inactive particle from the pool or create a new one if needed."""
-    global particle_pool
-    
-    # Try to find an inactive particle in the pool
-    for particle in particle_pool:
-        if not particle["active"]:
-            particle["active"] = True
-            return particle
-    
-    # If no inactive particles, create a new one and add to pool
-    new_particle = {
-        "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
-        "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
-        "active": True
-    }
-    particle_pool.append(new_particle)
-    return new_particle
+    """Legacy function that now uses the particle manager."""
+    return particle_manager.get_particle()
 
 def release_particle(particle):
-    """Return a particle to the pool (mark as inactive)."""
-    particle["active"] = False
+    """Legacy function that now uses the particle manager."""
+    particle_manager.release_particle(particle)
 
 def create_particle(x, y, color, size, dx, dy, duration):
-    """Create a particle using the particle pool system."""
-    global particles
-    
-    # Limit number of particles for performance
-    if len(particles) >= MAX_PARTICLES:
-        # If we've hit the limit, don't add more particles
-        return None
-    
-    # Get a particle from the pool
-    particle = get_particle_from_pool()
-    
-    # Set properties
-    particle["x"] = x
-    particle["y"] = y
-    particle["color"] = color
-    particle["size"] = size
-    particle["dx"] = dx
-    particle["dy"] = dy
-    particle["duration"] = duration
-    particle["start_duration"] = duration
-    
-    # Add to active particles
-    particles.append(particle)
-    return particle
+    """Legacy function that now uses the particle manager."""
+    return particle_manager.create_particle(x, y, color, size, dx, dy, duration)
 
 def create_crack(x, y):
     """Creates a crack effect at the given position."""
@@ -2772,8 +2650,8 @@ def create_explosion(x, y, color=None, max_radius=270, duration=30):
 def handle_misclick(x, y):
     """Handle a click that wasn't on a valid target."""
     global shake_duration, shake_magnitude
-    shake_duration = 5
-    shake_magnitude = 3
+    shake_duration = SHAKE_DURATION_MISCLICK
+    shake_magnitude = SHAKE_MAGNITUDE_MISCLICK
     create_crack(x, y)
 
 def draw_explosion(explosion, offset_x=0, offset_y=0):
@@ -2844,9 +2722,9 @@ def game_over_screen():
     clock = pygame.time.Clock()
     
     # Add click delay timer (5 seconds at 60 fps = 300 frames)
-    click_delay = 300
+    click_delay = GAME_OVER_CLICK_DELAY
     click_enabled = False
-    countdown_seconds = 5
+    countdown_seconds = GAME_OVER_COUNTDOWN_SECONDS
     
     # Calculate sad face dimensions (70% of screen)
     face_radius = min(WIDTH, HEIGHT) * 0.35  # 70% diameter, so 35% radius

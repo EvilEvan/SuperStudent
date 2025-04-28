@@ -1,13 +1,133 @@
 """
 SuperStudent - Particle System
 
-This module provides an optimized particle system with particle pooling
-and spatial partitioning for improved performance.
+This module provides an optimized particle system with object pooling 
+for all visual effects in the game.
 """
 import pygame
-import random
 import math
+import random
 from settings import PARTICLE_CULLING_DISTANCE, MAX_PARTICLES, ENABLE_COLLISION_GRID, COLLISION_GRID_SIZE
+
+class ParticleManager:
+    """
+    Manages all particle effects in the game with efficient pooling.
+    """
+    
+    def __init__(self, max_particles=200):
+        """
+        Initialize the particle manager.
+        
+        Args:
+            max_particles: Maximum number of particles allowed
+        """
+        self.max_particles = max_particles
+        self.particles = []
+        self.particle_pool = []
+        self.culling_distance = 0  # Will be set based on screen size
+        
+        # Create initial particle pool
+        for _ in range(100):  # Pre-create some particles to reuse
+            self.particle_pool.append({
+                "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
+                "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
+                "active": False
+            })
+    
+    def set_culling_distance(self, distance):
+        """Set the distance at which to cull offscreen particles."""
+        self.culling_distance = distance
+    
+    def get_particle(self):
+        """Get a particle from the pool or create a new one if needed."""
+        # Check if there's an available particle in the pool
+        for particle in self.particle_pool:
+            if not particle["active"]:
+                particle["active"] = True
+                return particle
+        
+        # If we've reached the maximum number of particles, return None
+        if len(self.particles) >= self.max_particles:
+            return None
+        
+        # Create a new particle and add it to the list
+        new_particle = {
+            "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
+            "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
+            "active": True
+        }
+        self.particles.append(new_particle)
+        return new_particle
+    
+    def release_particle(self, particle):
+        """Return a particle to the pool."""
+        particle["active"] = False
+    
+    def create_particle(self, x, y, color, size, dx, dy, duration):
+        """Create a new particle with the specified properties."""
+        particle = self.get_particle()
+        if particle:
+            particle["x"] = x
+            particle["y"] = y
+            particle["color"] = color
+            particle["size"] = size
+            particle["dx"] = dx
+            particle["dy"] = dy
+            particle["duration"] = duration
+            particle["start_duration"] = duration
+            return particle
+        return None
+    
+    def update(self, delta_time=1.0):
+        """Update all active particles."""
+        for particle in self.particles:
+            if particle["active"]:
+                # Move the particle
+                particle["x"] += particle["dx"] * delta_time
+                particle["y"] += particle["dy"] * delta_time
+                
+                # Decrease the duration
+                particle["duration"] -= 1 * delta_time
+                
+                # Release the particle if it's expired or offscreen
+                if particle["duration"] <= 0:
+                    self.release_particle(particle)
+                    continue
+                
+                # Cull particles that have moved far offscreen
+                if self.culling_distance > 0:
+                    distance_squared = particle["x"]**2 + particle["y"]**2
+                    if distance_squared > self.culling_distance**2:
+                        self.release_particle(particle)
+    
+    def draw(self, surface, offset_x=0, offset_y=0):
+        """Draw all active particles."""
+        for particle in self.particles:
+            if particle["active"]:
+                # Calculate opacity based on remaining duration
+                if particle["start_duration"] > 0:
+                    opacity = int(255 * (particle["duration"] / particle["start_duration"]))
+                else:
+                    opacity = 255
+                
+                # Create a temporary surface for the particle with alpha
+                particle_surface = pygame.Surface((particle["size"]*2, particle["size"]*2), pygame.SRCALPHA)
+                
+                # Draw the particle with the calculated opacity
+                color_with_alpha = (*particle["color"][:3], opacity)
+                pygame.draw.circle(particle_surface, color_with_alpha, 
+                                  (particle["size"], particle["size"]), particle["size"])
+                
+                # Draw the particle surface onto the main surface
+                surface.blit(particle_surface, 
+                           (particle["x"] - particle["size"] + offset_x, 
+                            particle["y"] - particle["size"] + offset_y))
+
+    def clear(self):
+        """Clear all active particles."""
+        for particle in self.particles:
+            if particle["active"]:
+                self.release_particle(particle)
 
 class ParticleSystem:
     """

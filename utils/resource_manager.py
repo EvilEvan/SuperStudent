@@ -340,17 +340,58 @@ class ResourceManager:
         Get statistics about loaded resources.
         
         Returns:
-            Dictionary with resource statistics
+            Dictionary with resource counts and memory usage
         """
-        return {
-            "fonts": len(self.fonts),
-            "images": len(self.images),
-            "sounds": len(self.sounds),
-            "memory_mb": self.get_memory_usage(),
-            "level_resources": {level: {k: len(v) for k, v in resources.items()} 
-                               for level, resources in self.level_resources.items()}
+        stats = {
+            "total_memory_usage_kb": int(self.memory_usage / 1024),
+            "fonts": self.resource_stats["fonts"],
+            "images": self.resource_stats["images"],
+            "sounds": self.resource_stats["sounds"],
+            "total_resources": sum(self.resource_stats.values()),
+            "levels": {}
         }
         
+        # Add level-specific stats
+        for level, resources in self.level_resources.items():
+            stats["levels"][level] = {
+                "fonts": len(resources.get("fonts", [])),
+                "images": len(resources.get("images", [])),
+                "sounds": len(resources.get("sounds", [])),
+                "total": sum(len(res) for res in resources.values())
+            }
+            
+        return stats
+        
+    def initialize_game_resources(self, display_mode=None):
+        """
+        Initialize all core game resources using the specified display mode.
+        
+        Args:
+            display_mode: Optional display mode override
+        
+        Returns:
+            Dictionary of initialized resources
+        """
+        # Set display mode if provided
+        if display_mode:
+            self.set_display_mode(display_mode)
+        
+        # Create resource container
+        resources = {}
+        
+        # Initialize fonts based on current display mode
+        resources['fonts'] = []
+        from settings import FONT_SIZES
+        for size_idx, size in enumerate(FONT_SIZES[self.display_mode]["regular"]):
+            resources['fonts'].append(self.get_font(f"size_{size_idx}"))
+        
+        resources['large_font'] = self.get_font("large")
+        resources['small_font'] = self.get_font("small")
+        resources['target_font'] = self.get_font("target")
+        resources['title_font'] = self.get_font("title")
+        
+        return resources
+    
     def preload_level_resources(self, level_name, resources_dict):
         """
         Preload a set of resources for a specific level.

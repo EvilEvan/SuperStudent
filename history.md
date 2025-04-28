@@ -1,5 +1,9 @@
 # History Log
 
+- 2024-06-12 10:45: Fixed ValueError in game_loop function. Properly initialized player_current_color and player_next_color with values from FLAME_COLORS list to prevent "is not in list" error.
+- 2024-06-12 10:30: Fixed UnboundLocalError with checkpoint_waiting variable. Added proper initialization for checkpoint_waiting and related checkpoint variables in the game_loop function.
+- 2024-06-12 10:15: Fixed SyntaxError in game_loop function. Resolved issue with target_dots_left variable being assigned before its global declaration by removing duplicate initialization.
+- 2024-06-11 15:30: Implemented Constants Consolidation task. Moved hardcoded constants from SuperStudent.py to settings.py and updated code to use imported constants. Improves maintainability by centralizing configuration values.
 - 2024-06-10 09:30: Added multi-touch functionality to all game levels. Fixed event handling in colors level to properly support touch input with the same behavior as mouse clicks. Ensured proper handling of multiple simultaneous touches.
 - 2024-06-09 15:25: Fixed initialization sequence error in display mode detection. Resolved NameError by properly ordering function declarations before use.
 - 2024-06-09 15:10: Added automatic display scaling to welcome screen. Elements now dynamically resize based on actual screen resolution. Auto-detection feature identifies appropriate display mode (Default/QBoard) based on screen size.

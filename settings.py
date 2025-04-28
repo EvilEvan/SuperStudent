@@ -38,9 +38,12 @@ LETTER_SPAWN_INTERVAL = 30  # spawn interval in frames
 VIBRATION_FRAMES = 30
 DISPERSE_FRAMES = 30
 CHECKPOINT_TRIGGER = 10  # Show checkpoint screen every 10 targets in Colors level
+SHAKE_DURATION_MISCLICK = 5
+SHAKE_MAGNITUDE_MISCLICK = 3
 
 # Game constants
 MAX_CRACKS = 15  # Number of cracks needed to shatter screen
+GROUP_SIZE = 5  # Number of items per group
 
 # Colors
 WHITE = (255, 255, 255)
@@ -118,8 +121,9 @@ SEQUENCES = {
     "colors": []  # Colors mode doesn't use sequence logic
 }
 
-# Groups per mode
-GROUP_SIZE = 5  # Number of items per group
+# Game Over Screen Constants
+GAME_OVER_CLICK_DELAY = 300  # 5 seconds at 60 fps
+GAME_OVER_COUNTDOWN_SECONDS = 5
 
 # Debug settings
 DEBUG_MODE = False
