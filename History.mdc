@@ -354,3 +354,5 @@ This enhancement improves gameplay by:
   - **Status:** Started.
 
 *   Project restructuring initiated.
+*   Moved `welcome_screen` to `welcome_display.py` and updated `SuperStudent.py` to call the new function.
+*   Moved `level_menu` and `draw_neon_button` to `level_selection.py` and updated `SuperStudent.py`.
