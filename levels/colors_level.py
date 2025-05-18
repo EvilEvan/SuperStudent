@@ -1068,3 +1068,55 @@ class ColorsLevel:
         # Count current targets to ensure state is consistent
         self.target_dots_left = sum(1 for d in self.dots if d["target"] and d["alive"])
         print(f"Colors Level: Resuming from checkpoint with {self.target_dots_left} targets remaining") 
+
+def start_colors_level_instance(screen, game_globals, common_game_state):
+    """Wrapper to instantiate and run the ColorsLevel."""
+    pygame_instance = game_globals['pygame']
+    clock = pygame_instance.time.Clock()
+    FPS = game_globals.get("FPS", 60)
+
+    width = game_globals['WIDTH']
+    height = game_globals['HEIGHT']
+    resource_manager = game_globals['resource_manager']
+    particle_system = game_globals['particle_manager_global'] # ColorsLevel expects this name
+    effects = game_globals['effects_manager']
+
+    level_instance = ColorsLevel(width, height, resource_manager, particle_system, effects)
+    
+    if not level_instance.initialize():
+        print("Error: ColorsLevel failed to initialize.")
+        return "ERROR" # Or LEVEL_MENU
+
+    running = True
+    level_status = None
+    last_status_from_handler = None
+
+    while running:
+        delta_time = clock.tick(FPS) / 1000.0
+
+        for event in pygame_instance.event.get():
+            status = level_instance.handle_event(event)
+            if status:
+                last_status_from_handler = status
+                if status in ["QUIT", "LEVEL_MENU", "CHECKPOINT", "GAME_OVER"]:
+                    running = False
+                    level_status = status
+                    break
+        if not running: break
+
+        if not level_instance.update(delta_time):
+            # According to ColorsLevel.update, it always returns True.
+            # If it were to return False, it might mean an internal stop condition.
+            print("ColorsLevel.update returned False. Exiting level.")
+            running = False
+            level_status = "LEVEL_MENU" # Default exit status
+            break
+        
+        level_instance.draw(screen)
+        # pygame.display.flip() is called within level_instance.draw()
+
+    level_instance.cleanup()
+    
+    # Prioritize status from event handler if it caused exit
+    final_status = level_status if level_status else last_status_from_handler
+    return final_status if final_status else "LEVEL_MENU" # Default if no specific exit

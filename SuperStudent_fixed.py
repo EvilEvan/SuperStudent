@@ -15,832 +15,451 @@ Date: 2024-06-09
 """
 
 import pygame
-
 import random
-
 import math
 
+# Import level modules
+from levels import alphabet_level
+from levels import numbers_level
+from levels import shapes_level
+from levels import clcase_level
+from levels import colors_level # This might be an issue if main.py also imports it.
+
 from settings import (
-
     COLORS_COLLISION_DELAY, DISPLAY_MODES, DEFAULT_MODE, DISPLAY_SETTINGS_PATH,
-
     LEVEL_PROGRESS_PATH, MAX_CRACKS, WHITE, BLACK, FLAME_COLORS, LASER_EFFECTS,
-
     LETTER_SPAWN_INTERVAL, SEQUENCES, GAME_MODES, GROUP_SIZE,
-
     SHAKE_DURATION_MISCLICK, SHAKE_MAGNITUDE_MISCLICK,
-
-    GAME_OVER_CLICK_DELAY, GAME_OVER_COUNTDOWN_SECONDS
-
+    GAME_OVER_CLICK_DELAY, GAME_OVER_COUNTDOWN_SECONDS,
+    FPS, CHECKPOINT_TRIGGER # Added FPS and CHECKPOINT_TRIGGER
 )
-
 
 
 pygame.init()
 
 
-
 # Allow only the necessary events (including multi-touch)
-
 pygame.event.set_allowed([
-
     pygame.FINGERDOWN,
-
     pygame.FINGERUP,
-
     pygame.FINGERMOTION,
-
     pygame.QUIT,
-
     pygame.KEYDOWN,
-
     pygame.MOUSEBUTTONDOWN,
-
     pygame.MOUSEBUTTONUP,
-
 ])
 
 
-
 # Get the screen size and initialize display in fullscreen
-
 info = pygame.display.Info()
-
 WIDTH, HEIGHT = info.current_w, info.current_h
-
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
-
 pygame.display.set_caption("Super Student")
 
 
-
 # Function to determine initial display mode based on screen size
-
 def detect_display_type():
-
     info = pygame.display.Info()
-
     screen_w, screen_h = info.current_w, info.current_h
-
     
-
     # If screen is larger than typical desktop monitors, assume it's a QBoard
-
     if screen_w >= 1920 and screen_h >= 1080:
-
         if screen_w > 2560 or screen_h > 1440:  # Larger than QHD is likely QBoard
-
             return "QBOARD"
-
     
-
     # Default to smaller format for typical monitors/laptops
-
     return "DEFAULT"
 
 
-
 # Initialize with default mode first
-
 DISPLAY_MODE = DEFAULT_MODE
 
 
-
 # Try to load previous display mode setting
-
 try:
-
     with open(DISPLAY_SETTINGS_PATH, "r") as f:
-
         loaded_mode = f.read().strip()
-
         if loaded_mode in DISPLAY_MODES:
-
             DISPLAY_MODE = loaded_mode
-
 except:
-
     # If file doesn't exist or can't be read, use auto-detection
-
     DISPLAY_MODE = detect_display_type()
 
 
-
 # Import ResourceManager
-
 from utils.resource_manager import ResourceManager
-
 from utils.particle_system import ParticleManager
 
 
-
 # Initialize particle manager globally
-
 particle_manager = None
 
 
-
 def init_resources():
-
     """
-
     Initialize game resources based on the current display mode using ResourceManager.
-
     """
-
     global font_sizes, fonts, large_font, small_font, TARGET_FONT, TITLE_FONT
-
     global MAX_PARTICLES, MAX_EXPLOSIONS, MAX_SWIRL_PARTICLES, mother_radius
-
     global particle_manager
-
     
-
     # Import from settings
-
     from settings import FONT_SIZES, MAX_PARTICLES as PARTICLES_SETTINGS
-
     from settings import MAX_EXPLOSIONS as EXPLOSIONS_SETTINGS
-
     from settings import MAX_SWIRL_PARTICLES as SWIRL_SETTINGS
-
     from settings import MOTHER_RADIUS
-
     
-
     # Get resource manager singleton
-
     resource_manager = ResourceManager()
-
     
-
     # Set display mode in the resource manager
-
     resource_manager.set_display_mode(DISPLAY_MODE)
-
     
-
     # Initialize mode-specific settings from settings.py
-
     MAX_PARTICLES = PARTICLES_SETTINGS[DISPLAY_MODE]
-
     MAX_EXPLOSIONS = EXPLOSIONS_SETTINGS[DISPLAY_MODE]
-
     MAX_SWIRL_PARTICLES = SWIRL_SETTINGS[DISPLAY_MODE]
-
     mother_radius = MOTHER_RADIUS[DISPLAY_MODE]
-
     
-
     # Initialize font sizes from settings
-
     font_sizes = FONT_SIZES[DISPLAY_MODE]["regular"]
-
     
-
     # Get core resources
-
     resources = resource_manager.initialize_game_resources()
-
     
-
     # Assign resources to global variables for backward compatibility
-
     fonts = resources['fonts']
-
     large_font = resources['large_font']
-
     small_font = resources['small_font']
-
     TARGET_FONT = resources['target_font']
-
     TITLE_FONT = resources['title_font']
-
     
-
     # Initialize particle manager with display mode specific settings
-
     particle_manager = ParticleManager(max_particles=MAX_PARTICLES)
-
     particle_manager.set_culling_distance(WIDTH)  # Set culling distance based on screen size
-
     
-
     # Save display mode preference
-
     try:
-
         with open(DISPLAY_SETTINGS_PATH, "w") as f:
-
             f.write(DISPLAY_MODE)
-
     except:
-
         pass  # If can't write, silently continue
-
     
-
     print(f"Resources initialized for display mode: {DISPLAY_MODE}")
-
     
-
     return resource_manager
 
 
-
 # Initialize resources with current mode
-
 resource_manager = init_resources()
 
 
-
 # OPTIMIZATION: Global particle system limits to prevent lag
-
 PARTICLE_CULLING_DISTANCE = WIDTH  # Distance at which to cull offscreen particles
-
 # Particle pool for object reuse
-
 particle_pool = []
-
 for _ in range(100):  # Pre-create some particles to reuse
-
     particle_pool.append({
-
         "x": 0, "y": 0, "color": (0,0,0), "size": 0, 
-
         "dx": 0, "dy": 0, "duration": 0, "start_duration": 0,
-
         "active": False
-
     })
 
 
-
 # Global variables for effects and touches.
-
 particles = []
-
 shake_duration = 0
-
 shake_magnitude = 10
-
 active_touches = {}
 
 
-
 # Declare explosions and lasers in global scope so they are available to all functions
-
 explosions = []
-
 lasers = []
 
 
-
 # Glass cracking effect variables
-
 glass_cracks = []
-
 background_shattered = False
-
 CRACK_DURATION = 600  # How long the shattered effect lasts (in frames)
-
 shatter_timer = 0  # Timer for the shattered effect
-
 opposite_background = BLACK  # Opposite of white
-
 current_background = WHITE  # Start with white background for levels
-
 game_over_triggered = False  # Flag to track if game over has been triggered
-
 game_over_delay = 0  # Delay before showing game over screen to allow animation to play
-
 GAME_OVER_DELAY_FRAMES = 60  # Number of frames to wait before showing game over
 
 
-
 # Add this near the other global variables at the top
-
 player_color_transition = 0
-
 player_current_color = FLAME_COLORS[0]
-
 player_next_color = FLAME_COLORS[1]
 
 
-
 # Add global variables for charge-up effect
-
 charging_ability = False
-
 charge_timer = 0
-
 charge_particles = []
-
 ability_target = None
 
 
-
 # Add at the top of the file with other global variables
-
 swirl_particles = []
-
 particles_converging = False
-
 convergence_target = None
-
 convergence_timer = 0
 
 
-
 ###############################################################################
-
 #                              SCREEN FUNCTIONS                               #
-
 ###############################################################################
-
-
 
 def welcome_screen():
-
     """Show the welcome screen with display size options."""
-
     global DISPLAY_MODE
-
     
-
     # Calculate scaling factor based on current screen size
-
     # This ensures welcome screen elements fit properly on any display
-
     base_height = 1080  # Base design height
-
     scale_factor = HEIGHT / base_height
-
     
-
     # Apply scaling to title and buttons
-
     title_offset = int(50 * scale_factor)
-
     button_width = int(200 * scale_factor)
-
     button_height = int(60 * scale_factor)
-
     button_spacing = int(20 * scale_factor)
-
     button_y_pos = int(200 * scale_factor)
-
     instruction_y_pos = int(150 * scale_factor)
-
     
-
     # Vivid bright colors for particles
-
     particle_colors = [
-
         (255, 0, 128),   # Bright pink
-
         (0, 255, 128),   # Bright green
-
         (128, 0, 255),   # Bright purple
-
         (255, 128, 0),   # Bright orange
-
         (0, 128, 255)    # Bright blue
-
     ]
-
     
-
     # Create dynamic gravitational particles
-
     particles = []
-
     for _ in range(120):
-
         angle = random.uniform(0, math.pi * 2)
-
         distance = random.uniform(200, max(WIDTH, HEIGHT))
-
         x = WIDTH // 2 + math.cos(angle) * distance
-
         y = HEIGHT // 2 + math.sin(angle) * distance
-
         size = random.randint(int(9 * scale_factor), int(15 * scale_factor))
-
         particles.append({
-
             "x": x,
-
             "y": y,
-
             "color": random.choice(particle_colors),
-
             "size": size,
-
             "orig_size": size,
-
             "angle": random.uniform(0, math.pi * 2),
-
             "speed": random.uniform(0.1, 0.5),
-
             "pulse_speed": random.uniform(0.02, 0.06),
-
             "pulse_factor": random.random()
-
         })
 
 
-
     # Button hover state and animation
-
     default_hover = False
-
     qboard_hover = False
-
     
-
     # Title animation parameters
-
     title_scale = 1.0
-
     title_scale_direction = 0.001
-
     title_colors = FLAME_COLORS.copy()
-
     current_color_idx = 0
-
     next_color_idx = 1
-
     color_transition = 0.0
-
     
-
     # Use scaled font size for title based on current display
-
     title_font_size = int(320 * scale_factor)  # Default title size times scale factor
-
     title_font = pygame.font.Font(None, title_font_size)
-
     
-
     # Create title rect for animation (we'll reuse this)
-
     title_text = "Super Student"
-
     title_rect_center = (WIDTH // 2, HEIGHT // 2 - title_offset)
 
 
-
     # Instructions
-
     display_text = small_font.render("Choose Display Size:", True, (255, 255, 255))
-
     display_rect = display_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + instruction_y_pos))
-
     
-
     # Create buttons for display size options
-
     default_button = pygame.Rect((WIDTH // 2 - button_width - button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
-
     qboard_button = pygame.Rect((WIDTH // 2 + button_spacing, HEIGHT // 2 + button_y_pos), (button_width, button_height))
-
     
-
     # Auto-detected mode text
-
     auto_text = small_font.render(f"Auto-detected: {detect_display_type()}", True, (200, 200, 200))
-
     auto_rect = auto_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + button_y_pos + button_height + 30))
-
     
-
     # Scale collaboration font based on display size
-
     collab_font_size = int(100 * scale_factor)
-
     collab_font = pygame.font.Font(None, collab_font_size)
-
     
-
     sangsom_pulse = 0
-
     sangsom_pulse_dir = 0.02
-
     
-
     # For swirl effect around title
-
     swirl_particles = []
-
     swirl_angle = 0
-
     
-
     # --- Main welcome screen loop ---
-
     running = True
-
     clock = pygame.time.Clock()
-
     while running:
-
         # Handle events
-
         mx, my = pygame.mouse.get_pos()
-
         default_hover = default_button.collidepoint(mx, my)
-
         qboard_hover = qboard_button.collidepoint(mx, my)
-
         
-
         for event in pygame.event.get():
-
             if event.type == pygame.QUIT:
-
                 pygame.quit()
-
                 exit()
-
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-
                 pygame.quit()
-
                 exit()
-
             if event.type == pygame.MOUSEBUTTONDOWN:
-
                 if default_button.collidepoint(mx, my):
-
                     # Create click particles
-
                     for _ in range(15):
-
                         create_particle(
-
                             mx, my, 
-
                             random.choice([(0, 200, 255), (100, 230, 255)]), 
-
                             random.randint(5, 12),
-
                             random.uniform(-3, 3), 
-
                             random.uniform(-3, 3),
-
                             20
-
                         )
-
                     DISPLAY_MODE = "DEFAULT"
-
                     init_resources()
-
                     running = False
-
                 elif qboard_button.collidepoint(mx, my):
-
                     # Create click particles
-
                     for _ in range(15):
-
                         create_particle(
-
                             mx, my, 
-
                             random.choice([(255, 0, 150), (255, 100, 180)]), 
-
                             random.randint(5, 12),
-
                             random.uniform(-3, 3), 
-
                             random.uniform(-3, 3),
-
                             20
-
                         )
-
                     DISPLAY_MODE = "QBOARD"
-
                     init_resources()
-
                     running = False
-
         
-
         # Clear screen
-
         screen.fill(BLACK)
-
         
-
         # Update and draw particles
-
         for particle in particles:
-
             # Orbital movement
-
             particle["angle"] += particle["speed"] * 0.01
-
             
-
             # Pulse size
-
             particle["pulse_factor"] += particle["pulse_speed"]
-
             if particle["pulse_factor"] > 1.0:
-
                 particle["pulse_factor"] = 0.0
-
             
-
             pulse = math.sin(particle["pulse_factor"] * math.pi * 2) * 0.3 + 0.7
-
             current_size = particle["orig_size"] * pulse
-
             
-
             # Calculate position with slight orbital movement
-
             orbit_radius = math.sin(particle["angle"]) * 20
-
             x = particle["x"] + math.cos(particle["angle"]) * orbit_radius
-
             y = particle["y"] + math.sin(particle["angle"]) * orbit_radius
-
             
-
             pygame.draw.circle(screen, particle["color"], (int(x), int(y)), max(1, int(current_size)))
-
         
-
         # Update swirl effect
-
         swirl_angle += 0.02
-
         if random.random() < 0.1 and len(swirl_particles) < 30:
-
             radius = random.uniform(100, 200) * scale_factor
-
             angle = random.uniform(0, math.pi * 2)
-
             swirl_particles.append({
-
                 "radius": radius,
-
                 "angle": angle,
-
                 "speed": random.uniform(0.01, 0.03),
-
                 "color": random.choice(particle_colors),
-
                 "size": random.randint(4, 8),
-
                 "life": random.randint(50, 150)
-
             })
-
         
-
         # Update and draw swirl particles
-
         for i, p in enumerate(swirl_particles):
-
             p["angle"] += p["speed"]
-
             p["life"] -= 1
-
             
-
             x = title_rect_center[0] + math.cos(p["angle"]) * p["radius"]
-
             y = title_rect_center[1] + math.sin(p["angle"]) * p["radius"]
-
             
-
             alpha = min(255, p["life"] * 2)
-
             color = (p["color"][0], p["color"][1], p["color"][2])
-
             
-
             pygame.draw.circle(screen, color, (int(x), int(y)), p["size"])
-
             
-
             # Remove dead particles
-
             if p["life"] <= 0:
-
                 swirl_particles[i] = None
-
         
-
         swirl_particles = [p for p in swirl_particles if p is not None]
-
         
-
         # Title color transition animation
-
         color_transition += 0.005
-
         if color_transition >= 1.0:
-
             color_transition = 0.0
-
             current_color_idx = next_color_idx
-
             next_color_idx = (next_color_idx + 1) % len(title_colors)
-
         
-
         # Blend between current and next color
-
         r = int(title_colors[current_color_idx][0] * (1 - color_transition) + title_colors[next_color_idx][0] * color_transition)
-
         g = int(title_colors[current_color_idx][1] * (1 - color_transition) + title_colors[next_color_idx][1] * color_transition)
-
         b = int(title_colors[current_color_idx][2] * (1 - color_transition) + title_colors[next_color_idx][2] * color_transition)
-
         title_color = (r, g, b)
-
         
-
         # Remove title breathing animation
-
         # Draw title with depth/glow effect with updated color
-
     shadow_color = (20, 20, 20)
-
     for depth in range(1, 0, -1):
-
         shadow = title_font.render(title_text, True, shadow_color)
-
         shadow_rect = shadow.get_rect(center=(title_rect_center[0] + depth, title_rect_center[1] + depth))
-
         screen.blit(shadow, shadow_rect)
         
-
     glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
-
     for i, glow_color in enumerate(glow_colors):
-
         glow = title_font.render(title_text, True, glow_color)
-
         offset = i + 1
-
         for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
-
             glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
-
             screen.blit(glow, glow_rect)
             
-
     highlight_color = (min(r+80, 255), min(g+80, 255), min(b+80, 255))
-
     shadow_color = (max(r-90, 0), max(g-90, 0), max(b-90, 0))
-
     mid_color = (max(r-40, 0), max(g-40, 0), max(b-40, 0))
-
         
-
     highlight = title_font.render(title_text, True, highlight_color)
-
     highlight_rect = highlight.get_rect(center=(title_rect_center[0] - 4, title_rect_center[1] - 4))
-
     screen.blit(highlight, highlight_rect)
         
-
     mid_tone = title_font.render(title_text, True, mid_color)
-
     mid_rect = mid_tone.get_rect(center=(title_rect_center[0] + 2, title_rect_center[1] + 2))
-
     screen.blit(mid_tone, mid_rect)
         
-
     inner_shadow = title_font.render(title_text, True, shadow_color)
-
     inner_shadow_rect = inner_shadow.get_rect(center=(title_rect_center[0] + 4, title_rect_center[1] + 4))
-
     screen.blit(inner_shadow, inner_shadow_rect)
         
-
     title = title_font.render(title_text, True, title_color)
-
     title_rect = title.get_rect(center=title_rect_center)
-
     screen.blit(title, title_rect)
         
-
     # Draw instructions
-
     # Draw instructions
     screen.blit(display_text, display_rect)
     # Draw buttons with hover effects
-
-    # Default button
 
     # Default button
     hover_expansion = 3 if default_hover else 0
@@ -1083,1514 +702,108 @@ def level_menu():
 #                          GAME LOGIC & EFFECTS                               #
 ###############################################################################
 
+# Map mode strings to level module functions (will be updated to classes later)
+LEVEL_DISPATCHER = {
+    "alphabet": alphabet_level.start_alphabet_level_instance,
+    "numbers": numbers_level.start_numbers_level_instance,
+    "shapes": shapes_level.start_shapes_level_instance,
+    "clcase": clcase_level.start_clcase_level_instance,
+    "colors": colors_level.start_colors_level_instance, # Updated
+}
+
 def game_loop(mode):
+    global screen, WIDTH, HEIGHT, SEQUENCES, GROUP_SIZE, LEVEL_PROGRESS_PATH, FLAME_COLORS, FPS, CHECKPOINT_TRIGGER # Make sure these are accessible
+    global small_font, large_font, TARGET_FONT, TITLE_FONT # Fonts
+    global particle_manager # Managers
     global shake_duration, shake_magnitude, particles, active_touches, explosions, lasers, player_color_transition, player_current_color, player_next_color, charging_ability, charge_timer, charge_particles, ability_target, swirl_particles, particles_converging, convergence_target, convergence_timer, glass_cracks, background_shattered, shatter_timer, mother_radius, game_over_triggered, game_over_delay, color_idx, color_sequence, next_color_index, target_dots_left
     
-    # Reset global effects that could persist between levels
+    # Reset global effects that could persist between levels (existing code for this part can remain for now)
     shake_duration = 0
     shake_magnitude = 0
-    particles = []
-    explosions = []
-    lasers = []
+    # particles = [] # This should be managed by the level or particle_manager
+    # explosions = [] # Managed by effects system or particle_manager
+    # lasers = [] # Managed by effects system or particle_manager
     active_touches = {}  # Clear any lingering active touches
-    glass_cracks = []  # Reset glass cracks
-    background_shattered = False  # Reset shattered state
-    mother_radius = 90 # Default radius for mother dot in Colors level
-    color_sequence = []
-    color_idx = 0
-    next_color_index = 0
-    # Don't initialize target_dots_left here since it's handled in the colors level code
-    convergence_timer = 0
-    charge_timer = 0
-    convergence_target = None
-    player_color_transition = 0
-    # Initialize player colors with actual values from FLAME_COLORS to avoid ValueError
-    player_current_color = FLAME_COLORS[0]  # Start with first flame color
-    player_next_color = FLAME_COLORS[1]     # Next color will be second flame color
-    charging_ability = False
-    charge_particles = []
-    ability_target = None
-    swirl_particles = []
-    particles_converging = False
-    game_over_triggered = False
-    game_over_delay = 0
+    # glass_cracks = [] # Reset glass cracks - should be managed by an effects system
+    # background_shattered = False  # Reset shattered state - effects system
+    # mother_radius = 90 # Default radius for mother dot in Colors level - should be level specific
+    # color_sequence = [] # Level specific
+    # color_idx = 0 # Level specific
+    # next_color_index = 0 # Level specific
+    # convergence_timer = 0 # Effect specific
+    # charge_timer = 0 # Effect specific
+    # convergence_target = None # Effect specific
+    # player_color_transition = 0 # Player/Effect specific
+    # player_current_color = FLAME_COLORS[0]  # Player/Effect specific
+    # player_next_color = FLAME_COLORS[1]     # Player/Effect specific
+    # charging_ability = False # Player/Ability specific
+    # charge_particles = [] # Effect specific
+    # ability_target = None # Player/Ability specific
+    # swirl_particles = [] # Effect specific
+    # particles_converging = False # Effect specific
+    # game_over_triggered = False # Game state specific
+    # game_over_delay = 0 # Game state specific
+
+    # Create a context dictionary to pass necessary game variables and functions
+    game_globals = {
+        "screen": screen, 
+        "pygame": pygame,
+        "random": random,
+        "math": math,
+        "WIDTH": WIDTH,
+        "HEIGHT": HEIGHT,
+        "SEQUENCES": SEQUENCES,
+        "GROUP_SIZE": GROUP_SIZE,
+        "LEVEL_PROGRESS_PATH": LEVEL_PROGRESS_PATH,
+        "FLAME_COLORS": FLAME_COLORS,
+        "FPS": FPS,
+        "CHECKPOINT_TRIGGER": CHECKPOINT_TRIGGER,
+        "WHITE": WHITE,
+        "BLACK": BLACK,
+        "fonts": fonts, # Already there
+        "particle_manager_global": particle_manager_global, # Already there
+        "handle_misclick": handle_misclick,
+        "display_info": display_info,
+        "draw_cracks": draw_cracks,
+        # Add resource_manager and effects_manager
+        "resource_manager": resource_manager,
+        "effects_manager": effects_manager,
+        "settings": settings # Pass the whole module for now, ColorsLevel uses many settings
+    }
     
-    # Initialize player trail particles
-    particles = []
-    
-    # Try to read from a persistent settings file to check if shapes was completed
-    try:
-        with open(LEVEL_PROGRESS_PATH, "r") as f:
-            progress = f.read().strip()
-            if "shapes_completed" in progress:
-                shapes_completed = True
-    except:
-        # If file doesn't exist or can't be read, assume shapes not completed
-        shapes_completed = False
-        
-    # Add a flag to track if shapes have rained down once already
-    shapes_first_round_completed = False
-
-    # Create sequence based on selected mode
-    sequence = SEQUENCES.get(mode, SEQUENCES["alphabet"])  # Default to alphabet if mode not found
-    
-    # Split into groups of GROUP_SIZE
-    groups = [sequence[i:i+GROUP_SIZE] for i in range(0, len(sequence), GROUP_SIZE)]
-
-    # Initialize game variables
-    current_group_index = 0
-    if not groups and mode != "colors": # Handle case where sequence is empty or too short
-        print("Error: No groups generated for the selected mode.")
-        return False # Or handle appropriately
-
-    current_group = groups[current_group_index] if mode != "colors" else []
-    # For consistency, use target_letter to represent the target even in shapes mode.
-    letters_to_target = current_group.copy()
-    if not letters_to_target and mode != "colors":
-        print("Error: Current group is empty.")
-        return False # Or handle appropriately
-    target_letter = letters_to_target[0] if mode != "colors" else None
-    TOTAL_LETTERS = len(sequence)
-    total_destroyed = 0 # Tracks overall destroyed across all groups
-    overall_destroyed = 0
-    running = True
-
-    clock = pygame.time.Clock()
-
-    # Restore number of background stars
-    stars = []
-    for _ in range(100):  # Restore to 100
-        x = random.randint(0, WIDTH)
-        y = random.randint(0, HEIGHT)
-        radius = random.randint(2, 4)
-        stars.append([x, y, radius])
-
-    # Initialize per-round (group) variables outside the main loop
-    letters = []           # items (letters or numbers) on screen
-    letters_spawned = 0    # count spawned items in current group
-    letters_destroyed = 0  # count destroyed in current group
-    last_checkpoint_triggered = 0  # New variable to track checkpoints
-    checkpoint_waiting = False  # Flag to track if we're waiting to show a checkpoint screen
-    checkpoint_delay_frames = 0  # Counter for checkpoint animation delay
-    just_completed_level = False  # Flag to prevent checkpoint triggering right after level completion
-    score = 0
-    abilities = ["laser", "aoe", "charge_up"]
-    current_ability = "laser"
-    # explosions = [] # Already reset globally
-    # lasers = [] # Already reset globally
-
-    game_started = False
-    last_click_time = 0
-    player_x = WIDTH // 2
-    player_y = HEIGHT // 2
-    player_color_index = 0
-    click_cooldown = 0
-    mouse_down = False
-    mouse_press_time = 0
-    click_count = 0
-
-    letters_to_spawn = current_group.copy()
-    frame_count = 0
-
-    # --- COLORS LEVEL SPECIAL LOGIC ---
-    if mode == "colors":
-        # Make target_dots_left global to ensure it's accessible and persistent
-        global target_dots_left
-        
-        # --- Setup ---
-        COLORS_LIST = [
-            (0, 0, 255),    # Blue
-            (255, 0, 0),    # Red
-            (0, 200, 0),    # Green
-            (255, 255, 0),  # Yellow
-            (128, 0, 255),  # Purple
-        ]
-        color_names = ["Blue", "Red", "Green", "Yellow", "Purple"]
-        
-        # Track colors that have been used as targets in the current cycle
-        used_colors = []
-        
-        # Start with a random color instead of fixed order
-        color_idx = random.randint(0, len(COLORS_LIST) - 1)
-        used_colors.append(color_idx)  # Mark initial color as used
-        
-        # Create a random order for subsequent colors rather than sequential cycling
-        color_sequence = list(range(len(COLORS_LIST)))
-        random.shuffle(color_sequence)
-        next_color_index = 0  # Track position in the shuffled sequence
-        
-        mother_color = COLORS_LIST[color_idx]
-        mother_color_name = color_names[color_idx]
-        
-        # Track how many of current color have been destroyed
-        current_color_dots_destroyed = 0
-        # Total number of dots needed to destroy per color before switching
-        dots_per_color = 5
-        
-        # Track total dots destroyed for checkpoint trigger
-        total_dots_destroyed = 0
-        checkpoint_trigger = 10  # Show checkpoint screen every 10 dots
-        
-        center = (WIDTH // 2, HEIGHT // 2)
-        # mother_radius already defined in init_resources based on display mode
-        vibration_frames = 30
-        disperse_frames = 30
-        running = True
-        clock = pygame.time.Clock()
-        score = 0
-        # --- VICTORY: Only 10 dots needed ---
-        target_dots_left = 10
-        dots = []
-        dots_active = False
-        frame = 0
-        overall_destroyed = 0
-        ghost_notification = None  # Initialize ghost notification variable
-        dots_before_checkpoint = 0  # To keep track of dots remaining before checkpoint
-        
-        # Add collision delay counter
-        collision_enabled = False
-        collision_delay_counter = 0
-        collision_delay_frames = COLORS_COLLISION_DELAY  # From settings.py (250 frames, 5 seconds at 50 FPS)
-
-        # --- Mother Dot Vibration ---
-        for vib in range(vibration_frames):
-            screen.fill(BLACK)
-            vib_x = center[0] + random.randint(-6, 6)
-            vib_y = center[1] + random.randint(-6, 6)
-            pygame.draw.circle(screen, mother_color, (vib_x, vib_y), mother_radius)
-            # Draw label
-            label = small_font.render("Remember this color!", True, WHITE)
-            label_rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 60))
-            screen.blit(label, label_rect)
-            # Remove all other text (set to black for easy finding)
-            screen.blit(small_font.render("", True, BLACK), (0,0))
-            pygame.display.flip()
-            clock.tick(50)  # PERFORMANCE: Lower FPS
-
-        # --- WAIT FOR CLICK TO START DISPERSION ---
-        waiting_for_dispersion = True
-        while waiting_for_dispersion:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                    return False
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    running = False
-                    return False
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    waiting_for_dispersion = False
-            # Draw the mother dot and prompt
-            screen.fill(BLACK)
-            pygame.draw.circle(screen, mother_color, center, mother_radius)
-            label = small_font.render("Remember this color!", True, WHITE)
-            label_rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 60))
-            screen.blit(label, label_rect)
-            prompt = small_font.render("Click to start!", True, (255, 255, 0))
-            prompt_rect = prompt.get_rect(center=(WIDTH // 2, HEIGHT // 2 + mother_radius + 120))
-            screen.blit(prompt, prompt_rect)
-            # Remove all other text (set to black for easy finding)
-            screen.blit(small_font.render("", True, BLACK), (0,0))
-            pygame.display.flip()
-            clock.tick(50)  # PERFORMANCE: Lower FPS
-
-        # --- Mother Dot Disperse Animation ---
-        disperse_particles = []
-        for i in range(100):
-            angle = random.uniform(0, 2 * math.pi)
-            disperse_particles.append({
-                "angle": angle,
-                "radius": 0,
-                "speed": random.uniform(12, 18),
-                "color": mother_color if i < 25 else None,  # Will assign distractor colors below
-            })
-        # Assign distractor colors (robust to any number of distractor colors)
-        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != color_idx]
-        num_distractor_colors = len(distractor_colors)
-        total_distractor_dots = 75
-        dots_per_color = total_distractor_dots // num_distractor_colors
-        extra = total_distractor_dots % num_distractor_colors
-        idx = 25
-        for color_idx, color in enumerate(distractor_colors):
-            count = dots_per_color + (1 if color_idx < extra else 0)
-            for _ in range(count):
-                if idx < 100:
-                    disperse_particles[idx]["color"] = color
-                    idx += 1
-
-        # --- Initialize Bouncing Dots ---
-        dots = []
-        # Store initial positions temporarily
-        initial_positions = []
-        for i, p in enumerate(disperse_particles):
-            x = int(center[0] + math.cos(p["angle"]) * p["radius"])
-            y = int(center[1] + math.sin(p["angle"]) * p["radius"])
-            # Add some random offset to prevent dots from being perfectly aligned
-            x += random.randint(-20, 20)
-            y += random.randint(-20, 20)
-            # Ensure dots stay within screen bounds
-            x = max(24, min(WIDTH - 24, x))
-            y = max(24, min(HEIGHT - 24, y))
-            
-            initial_positions.append((x, y))
-            
-        # Create dots with the positions, ensuring no overlaps
-        for i, (x, y) in enumerate(initial_positions):
-            dx = random.uniform(-6, 6)
-            dy = random.uniform(-6, 6)
-            
-            color = disperse_particles[i]["color"]
-            dots.append({
-                "x": x, "y": y,
-                "dx": dx, "dy": dy,
-                "color": color,
-                "radius": 24,  # was 22, now 10% bigger
-                "target": True if color == mother_color else False,
-                "alive": True,
-            })
-        dots_active = True
-        for t in range(disperse_frames):
-            screen.fill(BLACK)
-            for p in disperse_particles:
-                p["radius"] += p["speed"]
-                x = int(center[0] + math.cos(p["angle"]) * p["radius"])
-                y = int(center[1] + math.sin(p["angle"]) * p["radius"])
-                pygame.draw.circle(screen, p["color"], (x, y), 24)
-            # Remove all other text (set to black for easy finding)
-            screen.blit(small_font.render("", True, BLACK), (0,0))
-            pygame.display.flip()
-            clock.tick(50)  # PERFORMANCE: Lower FPS
-
-        # --- Main Colors Level Loop ---
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                    break
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    running = False
-                    break
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    mx, my = pygame.mouse.get_pos()
-                    hit_target = False
-                    for dot in dots:
-                        if dot["alive"]:
-                            dist = math.hypot(mx - dot["x"], my - dot["y"])
-                            if dist <= dot["radius"]:
-                                hit_target = True
-                                if dot["target"]:
-                                    dot["alive"] = False
-                                    target_dots_left -= 1
-                                    score += 10
-                                    overall_destroyed += 1  # <-- Increment destroyed count
-                                    current_color_dots_destroyed += 1  # Track per color
-                                    total_dots_destroyed += 1  # Track total for checkpoints
-                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)  # PERFORMANCE: shorter explosion
-                                    
-                                    # Check if we need to switch the target color
-                                    if current_color_dots_destroyed >= 5:  # Changed from 3 to 5
-                                        # Get the next color from unused colors first
-                                        available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                                        
-                                        # If all colors have been used, reset the used_colors tracking
-                                        if not available_colors:
-                                            used_colors = [color_idx]  # Keep current color as used
-                                            available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                                        
-                                        # Select a random color from available colors
-                                        color_idx = random.choice(available_colors)
-                                        used_colors.append(color_idx)
-                                        
-                                        mother_color = COLORS_LIST[color_idx]
-                                        mother_color_name = color_names[color_idx]
-                                        current_color_dots_destroyed = 0
-                                        
-                                        # Setup ghost notification (massive ghost dot)
-                                        ghost_notification = {
-                                            "color": mother_color,
-                                            "duration": 100,  # ~2 seconds at 50 FPS
-                                            "alpha": 255,
-                                            "radius": 150,  # Large ghost dot
-                                            "text": mother_color_name
-                                        }
-                                        
-                                        # Update target status for all dots
-                                        for d in dots:
-                                            if d["alive"]:
-                                                d["target"] = (d["color"] == mother_color)
-                                        
-                                        # Update target_dots_left count based on alive target dots
-                                        target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
-                                    
-                                    # Check for checkpoint trigger
-                                    if total_dots_destroyed % checkpoint_trigger == 0:
-                                        # Store the current number of dots left for restoration after checkpoint
-                                        dots_before_checkpoint = target_dots_left
-                                        
-                                        # Store the colors level state 
-                                        checkpoint_result = checkpoint_screen(mode)
-                                        
-                                        if not checkpoint_result:
-                                            return False  # Return to menu if Menu selected
-                                        
-                                        # If Continue was selected, restore the saved dot count
-                                        target_dots_left = dots_before_checkpoint
-                                        
-                                        # If Continue was selected, show a ghost notification to remind of the current target color
-                                        ghost_notification = {
-                                            "color": mother_color,
-                                            "duration": 100,  # ~2 seconds at 50 FPS
-                                            "alpha": 255,
-                                            "radius": 150,  # Large ghost dot
-                                            "text": mother_color_name
-                                        }
-                                        
-                                        # If Continue was selected, just continue the game with a new set of dots
-                                        # No need to return True which would restart the level
-                                        
-                                        # Don't reset the target_dots_left count, preserve it from checkpoint
-                                # No effect for distractors
-                                break
-            
-                    # Add crack on misclick in colors level
-                    if not hit_target:
-                        handle_misclick(mx, my)
-                
-                elif event.type == pygame.FINGERDOWN:
-                    touch_id = event.finger_id
-                    touch_x = event.x * WIDTH
-                    touch_y = event.y * HEIGHT
-                    active_touches[touch_id] = (touch_x, touch_y)
-                    
-                    hit_target = False
-                    for dot in dots:
-                        if dot["alive"]:
-                            dist = math.hypot(touch_x - dot["x"], touch_y - dot["y"])
-                            if dist <= dot["radius"]:
-                                hit_target = True
-                                if dot["target"]:
-                                    dot["alive"] = False
-                                    target_dots_left -= 1
-                                    score += 10
-                                    overall_destroyed += 1
-                                    current_color_dots_destroyed += 1
-                                    total_dots_destroyed += 1  # Track total for checkpoints
-                                    create_explosion(dot["x"], dot["y"], color=dot["color"], max_radius=60, duration=15)
-                                    
-                                    # Check if we need to switch the target color
-                                    if current_color_dots_destroyed >= 5:  # Changed from 3 to 5
-                                        # Get the next color from unused colors first
-                                        available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                                        
-                                        # If all colors have been used, reset the used_colors tracking
-                                        if not available_colors:
-                                            used_colors = [color_idx]  # Keep current color as used
-                                            available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                                        
-                                        # Select a random color from available colors
-                                        color_idx = random.choice(available_colors)
-                                        used_colors.append(color_idx)
-                                        
-                                        mother_color = COLORS_LIST[color_idx]
-                                        mother_color_name = color_names[color_idx]
-                                        current_color_dots_destroyed = 0
-                                        
-                                        # Setup ghost notification (massive ghost dot)
-                                        ghost_notification = {
-                                            "color": mother_color,
-                                            "duration": 100,  # ~2 seconds at 50 FPS
-                                            "alpha": 255,
-                                            "radius": 150,  # Large ghost dot
-                                            "text": mother_color_name
-                                        }
-                                        
-                                        # Update target status for all dots
-                                        for d in dots:
-                                            if d["alive"]:
-                                                d["target"] = (d["color"] == mother_color)
-                                        
-                                        # Update target_dots_left count based on alive target dots
-                                        target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
-                                    
-                                    # Check for checkpoint trigger
-                                    if total_dots_destroyed % checkpoint_trigger == 0:
-                                        # Store the current number of dots left for restoration after checkpoint
-                                        dots_before_checkpoint = target_dots_left
-                                        
-                                        # Store the colors level state 
-                                        checkpoint_result = checkpoint_screen(mode)
-                                        
-                                        if not checkpoint_result:
-                                            return False  # Return to menu if Menu selected
-                                        
-                                        # If Continue was selected, restore the saved dot count
-                                        target_dots_left = dots_before_checkpoint
-                                        
-                                        # If Continue was selected, show a ghost notification to remind of the current target color
-                                        ghost_notification = {
-                                            "color": mother_color,
-                                            "duration": 100,  # ~2 seconds at 50 FPS
-                                            "alpha": 255,
-                                            "radius": 150,  # Large ghost dot
-                                            "text": mother_color_name
-                                        }
-                                        
-                                        # If Continue was selected, just continue the game with a new set of dots
-                                        # No need to return True which would restart the level
-                                        
-                                        # Don't reset the target_dots_left count, preserve it from checkpoint
-                                break
-                    
-                    # Add crack on mistouch
-                    if not hit_target:
-                        handle_misclick(touch_x, touch_y)
-                
-                elif event.type == pygame.FINGERUP:
-                    touch_id = event.finger_id
-                    if touch_id in active_touches:
-                        del active_touches[touch_id]
-            
-            # Check if game over was triggered by screen breaking
-            if game_over_triggered:
-                # Let the shatter animation play for a bit before showing game over screen
-                if game_over_delay > 0:
-                    game_over_delay -= 1
-                else:
-                    game_started = False  # Pause the game
-                    if game_over_screen():  # Show game over screen
-                        running = False  # Return to level menu
-                        break
-                    else:
-                        # This else block shouldn't normally be reached due to required click
-                        running = False
-                        break
-            
-            # --- Update Dots ---
-            for dot in dots:
-                if not dot["alive"]:
-                    continue
-                dot["x"] += dot["dx"]
-                dot["y"] += dot["dy"]
-                # Bounce off walls
-                if dot["x"] - dot["radius"] < 0:
-                    dot["x"] = dot["radius"]
-                    dot["dx"] *= -1
-                if dot["x"] + dot["radius"] > WIDTH:
-                    dot["x"] = WIDTH - dot["radius"]
-                    dot["dx"] *= -1
-                if dot["y"] - dot["radius"] < 0:
-                    dot["y"] = dot["radius"]
-                    dot["dy"] *= -1
-                if dot["y"] + dot["radius"] > HEIGHT:
-                    dot["y"] = HEIGHT - dot["radius"]
-                    dot["dy"] *= -1
-            
-            # Update collision delay counter
-            if not collision_enabled:
-                collision_delay_counter += 1
-                if collision_delay_counter >= collision_delay_frames:
-                    collision_enabled = True
-                    collision_delay_counter = 0
-                    # Small visual effect to indicate collisions are now enabled
-                    for dot in dots:
-                        if dot["alive"]:
-                            # Add a small pulse effect to each dot
-                            create_particle(
-                                dot["x"], dot["y"],
-                                dot["color"],
-                                dot["radius"] * 1.5,
-                                0, 0,
-                                15  # Short duration
-                            )
-            
-            # --- Check for Collisions Between Dots ---
-            if collision_enabled:  # Only check collisions if enabled
-                for i, dot1 in enumerate(dots):
-                    if not dot1["alive"]:
-                        continue
-                    for j, dot2 in enumerate(dots[i+1:], i+1):  # Start from i+1 to avoid checking same pair twice
-                        if not dot2["alive"]:
-                            continue
-                        
-                        # Calculate distance between centers
-                        dx = dot1["x"] - dot2["x"]
-                        dy = dot1["y"] - dot2["y"]
-                        distance = math.hypot(dx, dy)
-                        
-                        # Check for collision (if distance is less than sum of radii)
-                        if distance < (dot1["radius"] + dot2["radius"]):
-                            # Normalize direction vector
-                            if distance > 0:  # Avoid division by zero
-                                nx = dx / distance
-                                ny = dy / distance
-                            else:
-                                nx, ny = 1, 0  # Default direction if dots are exactly at same position
-                            
-                            # Calculate relative velocity
-                            dvx = dot1["dx"] - dot2["dx"]
-                            dvy = dot1["dy"] - dot2["dy"]
-                            
-                            # Calculate velocity component along the normal
-                            velocity_along_normal = dvx * nx + dvy * ny
-                            
-                            # Only separate if moving toward each other
-                            if velocity_along_normal < 0:
-                                # Separate dots to prevent sticking
-                                overlap = (dot1["radius"] + dot2["radius"]) - distance
-                                dot1["x"] += overlap/2 * nx
-                                dot1["y"] += overlap/2 * ny
-                                dot2["x"] -= overlap/2 * nx
-                                dot2["y"] -= overlap/2 * ny
-                                
-                                # Swap velocities and reduce speed by 20%
-                                temp_dx = dot1["dx"]
-                                temp_dy = dot1["dy"]
-                                
-                                dot1["dx"] = dot2["dx"] * 0.8  # Reduce speed by 20%
-                                dot1["dy"] = dot2["dy"] * 0.8
-                                
-                                dot2["dx"] = temp_dx * 0.8
-                                dot2["dy"] = temp_dy * 0.8
-                                
-                                # Create small particle effect at collision point
-                                collision_x = (dot1["x"] + dot2["x"]) / 2
-                                collision_y = (dot1["y"] + dot2["y"]) / 2
-                                for _ in range(3):  # Create a few particles
-                                    create_particle(
-                                        collision_x, 
-                                        collision_y,
-                                        random.choice([dot1["color"], dot2["color"]]),
-                                        random.randint(5, 10),
-                                        random.uniform(-2, 2), 
-                                        random.uniform(-2, 2),
-                                        10  # Short duration
-                                    )
-
-            # --- Draw ---
-            # Apply screen shake if active
-            if shake_duration > 0:
-                offset_x = random.randint(-shake_magnitude, shake_magnitude)
-                offset_y = random.randint(-shake_magnitude, shake_magnitude)
-                shake_duration -= 1
-            else:
-                offset_x, offset_y = 0, 0
-                
-            # Fill background (apply offset if shaking) - use same system as other levels
-            if background_shattered:
-                screen.fill(opposite_background)
-            else:
-                screen.fill(current_background)
-
-            # Draw cracks
-            draw_cracks(screen)
-            
-            # --- Draw Background Elements (Stars) - same as other levels ---
-            for star in stars:
-                x, y, radius = star
-                y += 1 # Slower star movement speed
-                pygame.draw.circle(screen, (200, 200, 200), (x + offset_x, y + offset_y), radius)
-                if y > HEIGHT + radius: # Reset when fully off screen
-                    y = random.randint(-50, -10)
-                    x = random.randint(0, WIDTH)
-                star[1] = y
-                star[0] = x
-
-            # Draw all alive dots with screen shake offsets
-            for dot in dots:
-                if dot["alive"]:
-                    pygame.draw.circle(screen, dot["color"], 
-                                      (int(dot["x"] + offset_x), int(dot["y"] + offset_y)), 
-                                      dot["radius"])
-                    
-            # Draw explosions with offsets
-            for explosion in explosions[:]:
-                if explosion["duration"] > 0:
-                    draw_explosion(explosion, offset_x, offset_y)
-                    explosion["duration"] -= 1
-                else:
-                    explosions.remove(explosion)
-                    
-            # Display info - use ONLY the display_info function for HUD to avoid duplicates
-            display_info(score, "color", mother_color_name, overall_destroyed + letters_destroyed, 10, "colors")
-            
-            # Show sample target dot reference at top right
-            pygame.draw.circle(screen, mother_color, (WIDTH - 60, 60), 24)
-            pygame.draw.rect(screen, WHITE, (WIDTH - 90, 30, 60, 60), 2)
-            
-            # Display collision status for debugging (remove this in production)
-            if not collision_enabled:
-                countdown_text = f"Collisions in: {(collision_delay_frames - collision_delay_counter) // 50}s"
-                countdown_surface = small_font.render(countdown_text, True, WHITE)
-                screen.blit(countdown_surface, (10, HEIGHT - 30))
-            
-            # Draw ghost notification if active
-            if ghost_notification and ghost_notification["duration"] > 0:
-                # Create a semi-transparent surface for the ghost effect
-                ghost_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-                ghost_surface.fill((0, 0, 0, 0))  # Transparent background
-                
-                # Draw ghost dot
-                alpha = min(255, ghost_notification["alpha"])
-                ghost_color = ghost_notification["color"] + (alpha,)  # Add alpha as fourth value
-                pygame.draw.circle(ghost_surface, ghost_color, (WIDTH // 2, HEIGHT // 2), ghost_notification["radius"])
-                
-                # Add "Target Color:" label above the dot
-                ghost_font = pygame.font.Font(None, 48)
-                target_label = ghost_font.render("TARGET COLOR:", True, WHITE)
-                target_label_rect = target_label.get_rect(center=(WIDTH // 2, HEIGHT // 2 - ghost_notification["radius"] - 20))
-                ghost_surface.blit(target_label, target_label_rect)
-                
-                # Add color name label below the dot
-                ghost_text = ghost_font.render(ghost_notification["text"], True, ghost_notification["color"])
-                ghost_text_rect = ghost_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + ghost_notification["radius"] + 30))
-                ghost_surface.blit(ghost_text, ghost_text_rect)
-                
-                # Apply the ghost surface
-                screen.blit(ghost_surface, (0, 0))
-                
-                # Update notification
-                ghost_notification["duration"] -= 1
-                if ghost_notification["duration"] < 50:  # Start fading out in last second
-                    ghost_notification["alpha"] -= 5
-            
-            pygame.display.flip()
-            clock.tick(50)  # PERFORMANCE: Lower FPS
-            # End condition - we no longer end when target_dots_left reaches 0
-            # Instead, the level continues until the player exits through checkpoint screen
-            if target_dots_left <= 0:
-                # Instead of always resetting to 10, generate just enough new dots to continue gameplay
-                new_dots_count = 10
-                target_dots_left = new_dots_count
-                
-                # Select next color from unused colors first
-                available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                
-                # If all colors have been used, reset the used_colors tracking
-                if not available_colors:
-                    used_colors = [color_idx]  # Keep current color as used
-                    available_colors = [i for i in range(len(COLORS_LIST)) if i not in used_colors]
-                
-                # Select a random color from available colors
-                color_idx = random.choice(available_colors)
-                used_colors.append(color_idx)
-                
-                mother_color = COLORS_LIST[color_idx]
-                mother_color_name = color_names[color_idx]
-                
-                # Create a ghost notification to remind of the current target color
-                ghost_notification = {
-                    "color": mother_color,
-                    "duration": 100,  # ~2 seconds at 50 FPS
-                    "alpha": 255,
-                    "radius": 150,  # Large ghost dot
-                    "text": mother_color_name
-                }
-                
-                # Reset collision after generating new dots
-                collision_enabled = False
-                collision_delay_counter = 0
-                
-                # Remove any dead dots from the list
-                dots = [d for d in dots if d["alive"]]
-                
-                # Calculate how many new dots we need to create
-                new_dots_needed = 100 - len(dots)
-                
-                # Count how many target dots we already have (dots with the current target color)
-                existing_target_dots = sum(1 for d in dots if d["color"] == mother_color)
-                target_dots_needed = new_dots_count - existing_target_dots
-                
-                # Ensure target_dots_needed is not negative
-                target_dots_needed = max(0, target_dots_needed)
-                
-                # Create new dots - first create all needed target dots, then fill with distractors
-                for i in range(new_dots_needed):
-                    # Try to find a position that doesn't overlap with existing dots
-                    max_attempts = 10  # Limit attempts to prevent infinite loops
-                    valid_position = False
-                    
-                    for _ in range(max_attempts):
-                        x = random.randint(50, WIDTH - 50)
-                        y = random.randint(50, HEIGHT - 50)
-                        
-                        # Check distance from all existing dots
-                        valid_position = True
-                        for existing_dot in dots:
-                            distance = math.hypot(x - existing_dot["x"], y - existing_dot["y"])
-                            if distance < 50:  # Ensure some minimum distance (larger than 2*radius)
-                                valid_position = False
-                                break
-                                
-                        if valid_position:
-                            break
-                    
-                    # If we couldn't find a valid position, just use the last attempt
-                    dx = random.uniform(-6, 6)
-                    dy = random.uniform(-6, 6)
-                    
-                    # Determine if this dot is a target or distractor
-                    is_target = False
-                    if i < target_dots_needed:  # First create all required target dots
-                        color = mother_color
-                        is_target = True
-                    else:
-                        # Choose a random distractor color
-                        distractor_colors = [c for idx, c in enumerate(COLORS_LIST) if idx != color_idx]
-                        color = random.choice(distractor_colors)
-                    
-                    dots.append({
-                        "x": x, "y": y,
-                        "dx": dx, "dy": dy,
-                        "color": color,
-                        "radius": 24,
-                        "target": is_target,
-                        "alive": True,
-                    })
-                
-                # Update all dots to ensure target status is correctly set
-                for d in dots:
-                    if d["color"] == mother_color:
-                        d["target"] = True
-                    else:
-                        d["target"] = False
-                
-                # Count and update actual target dots left
-                target_dots_left = sum(1 for d in dots if d["target"] and d["alive"])
-
-        return False
-
-    # --- Main Game Loop ---
-    while running:
-
-        # -------------------- Event Handling --------------------
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                break
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                    break
-                if event.key == pygame.K_SPACE:
-                    current_ability = abilities[(abilities.index(current_ability) + 1) % len(abilities)]
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if not mouse_down:
-                    mouse_press_time = pygame.time.get_ticks()
-                    mouse_down = True
-            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                release_time = pygame.time.get_ticks()
-                mouse_down = False
-                duration = release_time - mouse_press_time
-                if duration <= 1000: # Check if it's a click (not a hold)
-                    click_count += 1
-                    if not game_started:
-                        game_started = True
-                    else:
-                        click_x, click_y = pygame.mouse.get_pos()
-                        current_time = release_time
-                        # Double click check (less relevant now, but kept logic)
-                        # if current_time - last_click_time < 250:
-                        #     # Potentially re-target logic (removed for simplicity)
-                        #     last_click_time = 0
-                        # else:
-                        last_click_time = current_time
-                        
-                        # Flag to track if click hit a target
-                        hit_target = False
-                        
-                        # --- Process Click on Target ---
-                        for letter_obj in letters[:]:
-                            if letter_obj["rect"].collidepoint(click_x, click_y):
-                                hit_target = True  # Marked as hit
-                                if letter_obj["value"] == target_letter:
-                                    score += 10
-                                    # Common destruction effects
-                                    create_explosion(letter_obj["x"], letter_obj["y"])
-                                    create_flame_effect(player_x, player_y - 80, letter_obj["x"], letter_obj["y"])
-                                    trigger_particle_convergence(letter_obj["x"], letter_obj["y"])
-                                    apply_explosion_effect(letter_obj["x"], letter_obj["y"], 150, letters) # Apply push effect
-
-                                    # Add visual feedback particles
-                                    for i in range(20):
-                                        create_particle(
-                                            letter_obj["x"], letter_obj["y"],
-                                            random.choice(FLAME_COLORS),
-                                            random.randint(40, 80),
-                                            random.uniform(-2, 2), random.uniform(-2, 2),
-                                            20
-                                        )
-
-                                    # Remove letter and update counts
-                                    letters.remove(letter_obj)
-                                    letters_destroyed += 1
-
-                                    # Update target
-                                    if target_letter in letters_to_target:
-                                        letters_to_target.remove(target_letter)
-                                    if letters_to_target:
-                                        target_letter = letters_to_target[0]
-                                    else:
-                                        # Handle case where group is finished but not yet detected by main loop logic
-                                        pass # Will be handled below
-
-                                    # Ability specific actions (if needed, e.g., charge up)
-                                    # if current_ability == "charge_up":
-                                    #     start_charge_up_effect(player_x, player_y, letter_obj["x"], letter_obj["y"])
-
-                                    break # Exit loop after processing one hit
-                                else:
-                                    # Optional: Add feedback for clicking wrong target (e.g., small shake, sound)
-                                    shake_duration = 5
-                                    shake_magnitude = 3
-                
-                        # If no target was hit, add a crack to the screen
-                        if not hit_target and game_started:
-                            handle_misclick(click_x, click_y)
-
-            elif event.type == pygame.FINGERDOWN:
-                touch_id = event.finger_id
-                touch_x = event.x * WIDTH
-                touch_y = event.y * HEIGHT
-                active_touches[touch_id] = (touch_x, touch_y)
-                if not game_started:
-                    game_started = True
-                else:
-                    # Flag to track if touch hit a target
-                    hit_target = False
-                    
-                    # --- Process Touch on Target ---
-                    for letter_obj in letters[:]:
-                        if letter_obj["rect"].collidepoint(touch_x, touch_y):
-                            hit_target = True  # Marked as hit
-                            if letter_obj["value"] == target_letter:
-                                score += 10
-                                # Common destruction effects
-                                create_explosion(letter_obj["x"], letter_obj["y"])
-                                create_flame_effect(player_x, player_y - 80, letter_obj["x"], letter_obj["y"])
-                                trigger_particle_convergence(letter_obj["x"], letter_obj["y"])
-                                apply_explosion_effect(letter_obj["x"], letter_obj["y"], 150, letters) # Apply push effect
-
-                                # Add visual feedback particles
-                                for i in range(20):
-                                    create_particle(
-                                        letter_obj["x"], letter_obj["y"],
-                                        random.choice(FLAME_COLORS),
-                                        random.randint(40, 80),
-                                        random.uniform(-2, 2), random.uniform(-2, 2),
-                                        20
-                                    )
-
-                                # Remove letter and update counts
-                                letters.remove(letter_obj)
-                                letters_destroyed += 1
-
-                                # Update target
-                                if target_letter in letters_to_target:
-                                    letters_to_target.remove(target_letter)
-                                if letters_to_target:
-                                    target_letter = letters_to_target[0]
-                                else:
-                                    # Handle case where group is finished but not yet detected by main loop logic
-                                    pass # Will be handled below
-
-                                # Ability specific actions (if needed)
-                                # if current_ability == "charge_up":
-                                #     start_charge_up_effect(player_x, player_y, letter_obj["x"], letter_obj["y"])
-
-                                break # Exit loop after processing one hit
-                            else:
-                                # Optional: Feedback for wrong target touch
-                                shake_duration = 5
-                                shake_magnitude = 3
-            
-                    # If no target was hit, add a crack to the screen
-                    if not hit_target and game_started:
-                        handle_misclick(touch_x, touch_y)
-
-            elif event.type == pygame.FINGERUP:
-                touch_id = event.finger_id
-                if touch_id in active_touches:
-                    del active_touches[touch_id]
-
-        # Mouse hold check (less relevant now)
-        # if mouse_down:
-        #     current_time = pygame.time.get_ticks()
-        #     if current_time - mouse_press_time > 1000:
-        #         mouse_down = False
-
-        # ------------------- Spawning Items -------------------
-        if game_started:
-            if letters_to_spawn:
-                if frame_count % LETTER_SPAWN_INTERVAL == 0:
-                    # Use a generic key "value" for both letters/numbers and shapes.
-                    item_value = letters_to_spawn.pop(0)
-                    letter_obj = {
-                        "value": item_value,
-                        "x": random.randint(50, WIDTH - 50),
-                        "y": -50,
-                        "rect": pygame.Rect(0, 0, 0, 0), # Will be updated when drawn
-                        "size": 120,  # fixed size (used for shapes, could be used for text bounding box approx)
-                        "dx": random.choice([-1, -0.5, 0.5, 1]) * 1.5, # Slightly faster horizontal drift
-                        "dy": random.choice([1, 1.5]) * 1.5, # Slightly faster fall speed
-                        "can_bounce": False, # Start without bouncing
-                        "mass": random.uniform(40, 60) # Give items mass for collisions
-                    }
-                    letters.append(letter_obj)
-                    letters_spawned += 1
-
-        # ------------------- Drawing and Updating -------------------
-        # Apply screen shake if active
-        if shake_duration > 0:
-            offset_x = random.randint(-shake_magnitude, shake_magnitude)
-            offset_y = random.randint(-shake_magnitude, shake_magnitude)
-            shake_duration -= 1
-        else:
-            offset_x, offset_y = 0, 0
-
-        # Check if game over was triggered by screen breaking
-        if game_over_triggered:
-            # Let the shatter animation play for a bit before showing game over screen
-            if game_over_delay > 0:
-                game_over_delay -= 1
-            else:
-                game_started = False  # Pause the game
-                if game_over_screen():  # Show game over screen
-                    running = False  # Return to level menu
-                    break
-                else:
-                    # This else block shouldn't normally be reached due to required click
-                    running = False
-                    break
-
-        # Fill background (apply offset if shaking)
-        if background_shattered:
-            screen.fill(opposite_background)
-        else:
-            screen.fill(current_background)
-
-        # Draw cracks
-        draw_cracks(screen)
-
-        # --- Draw Background Elements (Stars) ---
-        for star in stars:
-            x, y, radius = star
-            y += 1 # Slower star movement speed
-            pygame.draw.circle(screen, (200, 200, 200), (x + offset_x, y + offset_y), radius)
-            if y > HEIGHT + radius: # Reset when fully off screen
-                y = random.randint(-50, -10)
-                x = random.randint(0, WIDTH)
-            star[1] = y
-            star[0] = x
-
-        # --- Draw Swirling Particles around Center ---
-        # Ensure swirl particles are updated even if target is a shape
-        update_swirl_particles(player_x, player_y)
-
-        # --- Draw Center Target Display ---
-        # Smooth color transition for player target (center display)
-        transition_speed = 0.02
-        player_color_transition += transition_speed
-        if player_color_transition >= 1:
-            player_color_transition = 0
-            current_index = FLAME_COLORS.index(player_current_color)
-            next_index = (current_index + 1) % len(FLAME_COLORS)
-            player_current_color = FLAME_COLORS[current_index]
-            player_next_color = FLAME_COLORS[next_index]
-
-        # Interpolate between current and next color
-        r = int(player_current_color[0] * (1 - player_color_transition) + player_next_color[0] * player_color_transition)
-        g = int(player_current_color[1] * (1 - player_color_transition) + player_next_color[1] * player_color_transition)
-        b = int(player_current_color[2] * (1 - player_color_transition) + player_next_color[2] * player_color_transition)
-        center_target_color = (r, g, b)
-
-        if mode == "shapes":
-            # Draw the center target display as a shape outline
-            value = target_letter
-            size = 500  # adjust size as needed for display
-            pos = (player_x + offset_x, player_y + offset_y)
-            rect = pygame.Rect(pos[0] - int(size*1.5)//2, pos[1] - size//2, int(size*1.5), size)
-            if value == "Rectangle":
-                pygame.draw.rect(screen, center_target_color, rect, 8)  # Border only, 1.5:1 aspect
-            elif value == "Square":
-                square_rect = pygame.Rect(pos[0] - size//2, pos[1] - size//2, size, size)
-                pygame.draw.rect(screen, center_target_color, square_rect, 8)  # Border only
-            elif value == "Circle":
-                pygame.draw.circle(screen, center_target_color, pos, size//2, 8)  # Border only
-            elif value == "Triangle":
-                points = [
-                    (pos[0], pos[1] - size//2),
-                    (pos[0] - size//2, pos[1] + size//2),
-                    (pos[0] + size//2, pos[1] + size//2)
-                ]
-                pygame.draw.polygon(screen, center_target_color, points, 8)  # Border only
-            elif value == "Pentagon":
-                points = []
-                r_size = size // 2
-                for i in range(5):
-                    angle = math.radians(72 * i - 90)
-                    points.append((pos[0] + r_size * math.cos(angle), pos[1] + r_size * math.sin(angle)))
-                pygame.draw.polygon(screen, center_target_color, points, 8)  # Border only
-        else:  # Alphabet, Numbers, C/L Case
-            player_font = pygame.font.Font(None, 900)
-            display_char = target_letter  # default
-
-            if mode == "clcase":
-                display_char = target_letter.upper()
-            elif mode == "alphabet" and target_letter == "a":
-                display_char = "α"
-
-            player_text = player_font.render(display_char, True, center_target_color)
-            player_rect = player_text.get_rect(center=(player_x + offset_x, player_y + offset_y))
-            screen.blit(player_text, player_rect)
-
-        # --- Update and Draw Falling Items (Letters/Numbers/Shapes) ---
-        for letter_obj in letters[:]:
-            letter_obj["x"] += letter_obj["dx"]
-            letter_obj["y"] += letter_obj["dy"]
-
-            # --- Bouncing Logic ---
-            # Allow bouncing only after falling a certain distance
-            if not letter_obj["can_bounce"] and letter_obj["y"] > HEIGHT // 5:
-                 letter_obj["can_bounce"] = True
-
-            # If bouncing is enabled, check screen edges
-            if letter_obj["can_bounce"]:
-                bounce_dampening = 0.8 # Reduce speed slightly on bounce
-
-                # Left/Right Walls
-                if letter_obj["x"] <= 0 + letter_obj.get("size", 50)/2: # Approx radius check
-                    letter_obj["x"] = 0 + letter_obj.get("size", 50)/2
-                    letter_obj["dx"] = abs(letter_obj["dx"]) * bounce_dampening
-                elif letter_obj["x"] >= WIDTH - letter_obj.get("size", 50)/2:
-                    letter_obj["x"] = WIDTH - letter_obj.get("size", 50)/2
-                    letter_obj["dx"] = -abs(letter_obj["dx"]) * bounce_dampening
-
-                # Top/Bottom Walls (less likely to hit top unless pushed)
-                if letter_obj["y"] <= 0 + letter_obj.get("size", 50)/2:
-                    letter_obj["y"] = 0 + letter_obj.get("size", 50)/2
-                    letter_obj["dy"] = abs(letter_obj["dy"]) * bounce_dampening
-                elif letter_obj["y"] >= HEIGHT - letter_obj.get("size", 50)/2:
-                    letter_obj["y"] = HEIGHT - letter_obj.get("size", 50)/2
-                    letter_obj["dy"] = -abs(letter_obj["dy"]) * bounce_dampening
-                    # Also slightly push horizontally away from edge on bottom bounce
-                    letter_obj["dx"] *= bounce_dampening
-                    if letter_obj["x"] < WIDTH / 2:
-                        letter_obj["dx"] += random.uniform(0.1, 0.3)
-                    else:
-                        letter_obj["dx"] -= random.uniform(0.1, 0.3)
-
-            # --- Draw the Item (Shape or Text) ---
-            draw_pos_x = int(letter_obj["x"] + offset_x)
-            draw_pos_y = int(letter_obj["y"] + offset_y)
-
-            if mode == "shapes":
-                value = letter_obj["value"]
-                size = letter_obj["size"]
-                pos = (draw_pos_x, draw_pos_y)
-                if value == "Rectangle":
-                    rect = pygame.Rect(pos[0] - int(size*1.5)//2, pos[1] - size//2, int(size*1.5), size)
-                    letter_obj["rect"] = rect
-                    pygame.draw.rect(screen, center_target_color, rect, 6)  # Border only, 1.5:1 aspect
-                elif value == "Square":
-                    rect = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
-                    letter_obj["rect"] = rect
-                    pygame.draw.rect(screen, center_target_color, rect, 6)  # Border only
-                elif value == "Circle":
-                    rect = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
-                    letter_obj["rect"] = rect
-                    pygame.draw.circle(screen, center_target_color, pos, size//2, 6)  # Border only
-                elif value == "Triangle":
-                    points = [
-                        (pos[0], pos[1] - size//2),
-                        (pos[0] - size//2, pos[1] + size//2),
-                        (pos[0] + size//2, pos[1] + size//2)
-                    ]
-                    letter_obj["rect"] = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
-                    pygame.draw.polygon(screen, center_target_color, points, 6)  # Border only
-                elif value == "Pentagon":
-                    points = []
-                    r_size = size // 2
-                    for i in range(5):
-                        angle = math.radians(72 * i - 90)
-                        points.append((pos[0] + r_size * math.cos(angle), pos[1] + r_size * math.sin(angle)))
-                    letter_obj["rect"] = pygame.Rect(pos[0]-size//2, pos[1]-size//2, size, size)
-                    pygame.draw.polygon(screen, center_target_color, points, 6)  # Border only
-            else: # Alphabet, Numbers, C/L Case
-                display_value = letter_obj["value"]
-
-                if mode == "clcase" and letter_obj["value"] == "a":
-                    display_value = "α"
-
-                text_surface = TARGET_FONT.render(display_value, True, center_target_color)
-                text_rect = text_surface.get_rect(center=(draw_pos_x, draw_pos_y))
-                letter_obj["rect"] = text_rect
-                screen.blit(text_surface, text_rect)
-
-
-        # --- Simple Collision Detection Between Items ---
-        for i, letter_obj1 in enumerate(letters):
-            for j in range(i + 1, len(letters)):
-                letter_obj2 = letters[j]
-                dx = letter_obj2["x"] - letter_obj1["x"]
-                dy = letter_obj2["y"] - letter_obj1["y"]
-                distance_sq = dx*dx + dy*dy # Use squared distance for efficiency
-
-                # Approximate collision radius based on font/shape size
-                # Use a slightly larger radius for text to account for varying widths
-                radius1 = letter_obj1.get("size", TARGET_FONT.get_height()) / 1.8 # Approx radius
-                radius2 = letter_obj2.get("size", TARGET_FONT.get_height()) / 1.8
-                min_distance = radius1 + radius2
-                min_distance_sq = min_distance * min_distance
-
-                if distance_sq < min_distance_sq and distance_sq > 0: # Check for overlap
-                    distance = math.sqrt(distance_sq)
-                    # Normalize collision vector
-                    nx = dx / distance
-                    ny = dy / distance
-
-                    # Resolve interpenetration (push apart)
-                    overlap = min_distance - distance
-                    total_mass = letter_obj1["mass"] + letter_obj2["mass"]
-                    # Push apart proportional to the *other* object's mass
-                    push_factor = overlap / total_mass
-                    letter_obj1["x"] -= nx * push_factor * letter_obj2["mass"]
-                    letter_obj1["y"] -= ny * push_factor * letter_obj2["mass"]
-                    letter_obj2["x"] += nx * push_factor * letter_obj1["mass"]
-                    letter_obj2["y"] += ny * push_factor * letter_obj1["mass"]
-
-                    # Calculate collision response (bounce) - Elastic collision formula component
-                    # Relative velocity
-                    dvx = letter_obj1["dx"] - letter_obj2["dx"]
-                    dvy = letter_obj1["dy"] - letter_obj2["dy"]
-                    # Dot product of relative velocity and collision normal
-                    dot_product = dvx * nx + dvy * ny
-                    # Impulse magnitude
-                    impulse = (2 * dot_product) / total_mass
-                    bounce_factor = 0.85 # Slightly less than perfectly elastic
-
-                    # Apply impulse scaled by mass and bounce factor
-                    letter_obj1["dx"] -= impulse * letter_obj2["mass"] * nx * bounce_factor
-                    letter_obj1["dy"] -= impulse * letter_obj2["mass"] * ny * bounce_factor
-                    letter_obj2["dx"] += impulse * letter_obj1["mass"] * nx * bounce_factor
-                    letter_obj2["dy"] += impulse * letter_obj1["mass"] * ny * bounce_factor
-
-
-        # --- Process Lasers / Flame Effects ---
-        for laser in lasers[:]:
-            if laser["duration"] > 0:
-                if laser["type"] == "flamethrower":
-                    draw_flamethrower(laser, offset_x, offset_y) # Pass shake offset
-                # Add other laser types if needed (ice, pink_magic)
-                # else:
-                #     pygame.draw.line(screen, random.choice(laser["colors"]),
-                #                      (laser["start_pos"][0] + offset_x, laser["start_pos"][1] + offset_y),
-                #                      (laser["end_pos"][0] + offset_x, laser["end_pos"][1] + offset_y),
-                #                       random.choice(laser["widths"]))
-                laser["duration"] -= 1
-            else:
-                lasers.remove(laser)
-
-        # --- Process Explosions ---
-        for explosion in explosions[:]:
-            if explosion["duration"] > 0:
-                draw_explosion(explosion, offset_x, offset_y) # Pass shake offset
-                explosion["duration"] -= 1
-            else:
-                explosions.remove(explosion)
-
-        # --- Process Charge-Up Ability Effect ---
-        if charging_ability:
-            charge_timer -= 1
-
-            # Draw a dark overlay for a dramatic effect
-            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 100))  # Semi-transparent black
-            screen.blit(overlay, (0, 0)) # No shake offset for overlay
-
-            # Process materializing/accelerating particles
-            for particle in charge_particles[:]:
-                # Handle initial delay
-                if particle["delay"] > 0:
-                    particle["delay"] -= 1
-                    continue
-
-                # Materialization phase
-                if particle["type"] == "materializing":
-                    if particle["materialize_time"] > 0:
-                        particle["materialize_time"] -= 1
-                        ratio = 1 - (particle["materialize_time"] / 15) # 0 to 1
-                        particle["opacity"] = int(particle["max_opacity"] * ratio)
-                        particle["size"] = particle["max_size"] * ratio
-
-                        # Wobble effect
-                        wobble_x = math.cos(particle["wobble_angle"]) * particle["wobble_amount"]
-                        wobble_y = math.sin(particle["wobble_angle"]) * particle["wobble_amount"]
-                        particle["wobble_angle"] += particle["wobble_speed"]
-
-                        # Draw materializing particle (apply shake offset here)
-                        particle_surface = pygame.Surface((particle["size"]*2, particle["size"]*2), pygame.SRCALPHA)
-                        pygame.draw.circle(particle_surface,
-                                          (*particle["color"], particle["opacity"]),
-                                          (particle["size"], particle["size"]),
-                                          particle["size"])
-                        screen.blit(particle_surface,
-                                   (int(particle["x"] + wobble_x - particle["size"] + offset_x),
-                                    int(particle["y"] + wobble_y - particle["size"] + offset_y)))
-                        continue
-                    else:
-                        particle["type"] = "accelerating" # Transition to next phase
-
-                # Acceleration phase
-                if particle["type"] == "accelerating":
-                    dx = particle["target_x"] - particle["x"]
-                    dy = particle["target_y"] - particle["y"]
-                    distance = math.hypot(dx, dy)
-
-                    if distance > 5: # Move until close
-                        # Accelerate based on distance
-                        particle["speed"] += particle["acceleration"] * (1 + (400 - min(400, distance)) / 1000)
-                        norm_dx = dx / distance
-                        norm_dy = dy / distance
-                        particle["x"] += norm_dx * particle["speed"]
-                        particle["y"] += norm_dy * particle["speed"]
-
-                        # Leave trail particles (add to main particle list)
-                        if particle["trail"] and random.random() < 0.4:
-                            create_particle(
-                                particle["x"], particle["y"],
-                                particle["color"], particle["size"] / 2,
-                                -norm_dx * 0.5, -norm_dy * 0.5,
-                                50  # Shorter trail duration
-                            )
-
-                        # Draw particle with glow (apply shake offset)
-                        draw_x = int(particle["x"] + offset_x)
-                        draw_y = int(particle["y"] + offset_y)
-                        glow_size = particle["size"] * 1.5
-                        glow_surface = pygame.Surface((glow_size*2, glow_size*2), pygame.SRCALPHA)
-                        pygame.draw.circle(glow_surface, (*particle["color"], 70), (glow_size, glow_size), glow_size)
-                        screen.blit(glow_surface, (int(draw_x - glow_size), int(draw_y - glow_size)))
-
-                        particle_surface = pygame.Surface((particle["size"]*2, particle["size"]*2), pygame.SRCALPHA)
-                        pygame.draw.circle(particle_surface, (*particle["color"], particle["opacity"]), (particle["size"], particle["size"]), particle["size"])
-                        screen.blit(particle_surface, (int(draw_x - particle["size"]), int(draw_y - particle["size"])))
-                    else:
-                        # Particle reached target - remove and create small flash
-                        for _ in range(3):
-                            particles.append({
-                                "x": particle["target_x"], "y": particle["target_y"],
-                                "color": particle["color"], "size": random.uniform(12, 24),
-                                "dx": random.uniform(-2, 2), "dy": random.uniform(-2, 2),
-                                "duration": 20
-                            })
-                        charge_particles.remove(particle)
-
-
-            # Draw energy orb forming at player position (apply shake offset)
-            orb_x = player_x + offset_x
-            orb_y = player_y - 80 + offset_y # Offset slightly above center
-            energy_radius = 20 + (30 - charge_timer) * 1.5  # Grows as timer decreases
-            pulse = abs(math.sin(pygame.time.get_ticks() * 0.01)) * 15  # Pulsing effect
-
-            for i in range(3): # Draw multiple layers for orb
-                factor = 1 - (i * 0.25)
-                color = FLAME_COLORS[int((pygame.time.get_ticks() * 0.01 + i*2) % len(FLAME_COLORS))]
-                radius = (energy_radius + pulse) * factor
-                alpha = int(200 * factor)
-
-                glow_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA) # Correct surface size
-                pygame.draw.circle(glow_surface, (*color, alpha), (radius, radius), radius)
-                screen.blit(glow_surface, (int(orb_x - radius), int(orb_y - radius)))
-
-            # Bright inner core
-            pygame.draw.circle(screen, (255, 255, 255), (int(orb_x), int(orb_y)), int(energy_radius/3))
-
-            # If charge complete, fire the ability
-            if charge_timer <= 0:
-                charging_ability = False
-                if ability_target: # Ensure target exists
-                    # Trigger effects at the target location
-                    create_explosion(ability_target[0], ability_target[1])
-                    create_flame_effect(player_x, player_y - 80, ability_target[0], ability_target[1]) # Originates from player center
-
-                    # Create massive explosion particles at target
-                    for _ in range(40):
-                        particles.append({
-                            "x": ability_target[0], "y": ability_target[1],
-                            "color": random.choice(FLAME_COLORS),
-                            "size": random.randint(40, 80),
-                            "dx": random.uniform(-4, 4), "dy": random.uniform(-4, 4),
-                            "duration": 100 # Longer duration for big explosion
-                        })
-                    ability_target = None # Reset target after firing
-
-
-        # --- Draw General Particles ---
-        # Use the particle manager instead of manually updating particles
-        particle_manager.update()
-        particle_manager.draw(screen, offset_x, offset_y)
-        
-        # --- Display HUD Info ---
-        if mode != "colors":
-            display_info(score, current_ability, target_letter, overall_destroyed + letters_destroyed, TOTAL_LETTERS, mode) # Pass mode
-
-        # --- Player Trail Effect (less relevant if player doesn't move) ---
-        # if game_started:
-        #     create_player_trail(player_x, player_y)
-
-
-        # --- Update Display ---
-        pygame.display.flip()
-        clock.tick(50)  # PERFORMANCE: Lower FPS for all main game loops
-        frame_count += 1
-
-
-        # --- Checkpoint Logic ---
-        overall_destroyed = total_destroyed + letters_destroyed
-
-        # If waiting for animations before showing checkpoint screen
-        if checkpoint_waiting:
-            # Only show checkpoint after delay AND when animations are mostly complete
-            if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
-                checkpoint_waiting = False
-                game_started = False  # Pause the game
-                if not checkpoint_screen(mode): # If checkpoint returns False (chose Menu)
-                    running = False # Exit game loop to return to menu
-                    break
-                else:
-                    # If continue was pressed
-                    if mode == "colors" and shapes_completed:
-                        running = False  # Signal to restart colors level
-                        break
-                    elif mode == "shapes":
-                        return True  # Signal to restart shapes level
-                    else:
-                        game_started = True  # Resume the current level
-            else:
-                checkpoint_delay_frames -= 1
-
-        # Check if we hit a new checkpoint threshold (and not just completed a level)
-        elif overall_destroyed > 0 and overall_destroyed % 10 == 0 and overall_destroyed // 10 > last_checkpoint_triggered and not just_completed_level:
-            last_checkpoint_triggered = overall_destroyed // 10
-            checkpoint_waiting = True
-            checkpoint_delay_frames = 60  # Wait ~1 second (60 frames) for animations
-
-
-        # --- Level Progression Logic ---
-        # Check if the current group is finished (no letters left on screen AND no more to spawn)
-        if not letters and not letters_to_spawn and letters_to_target == []: # Ensure targets are also cleared
-            total_destroyed += letters_destroyed # Add destroyed from this group to total
-            current_group_index += 1
-            just_completed_level = True # Set flag to prevent immediate checkpoint
-
-            # For shapes mode, make shapes rain down a second time after first round completion
-            if mode == "shapes" and not shapes_first_round_completed:
-                shapes_first_round_completed = True
-                # Reset the group index to start over
-                current_group_index = 0
-                current_group = groups[current_group_index]
-                letters_to_spawn = current_group.copy()
-                letters_to_target = current_group.copy()
-                if letters_to_target:
-                    target_letter = letters_to_target[0]
-                # Reset group-specific counters
-                letters_destroyed = 0
-                letters_spawned = 0
-                just_completed_level = False # Reset flag for the new level
-                game_started = True # Ensure game continues
-                last_checkpoint_triggered = overall_destroyed // 10 # Update checkpoint trigger base
-            elif current_group_index < len(groups):
-                # --- Start Next Group ---
-                current_group = groups[current_group_index]
-                letters_to_spawn = current_group.copy()
-                letters_to_target = current_group.copy()
-                if letters_to_target:
-                     target_letter = letters_to_target[0]
-                else:
-                     print(f"Warning: Group {current_group_index} is empty.")
-                     # Handle this case - maybe skip group or end game?
-                     running = False # End game for now if a group is empty
-                     break
-
-                # Reset group-specific counters
-                letters_destroyed = 0
-                letters_spawned = 0
-                # Reset effects? Maybe not necessary unless they persist wrongly
-                # explosions = []
-                # lasers = []
-                # particles = [] # Might clear too many effects?
-                just_completed_level = False # Reset flag for the new level
-                game_started = True # Ensure game continues if paused by checkpoint logic bug
-                last_checkpoint_triggered = overall_destroyed // 10 # Update checkpoint trigger base
-
-            else:
-                # --- All Groups Completed (Level Finished) ---
-                # For shapes level, always show checkpoint screen instead of well_done
-                if mode == "shapes":
-                    # Let the main completion check at the end of game_loop handle this
-                    # Just mark completion and exit the loop
-                    if shapes_first_round_completed:
-                        total_destroyed += letters_destroyed
-                        # Show checkpoint screen after completing shapes mode (both rounds)
-                        pygame.time.delay(500)  # Brief delay
-                        if checkpoint_screen(mode):  # If checkpoint returns True (chose Continue)
-                            return True  # Signal to the main loop to restart the level
-                        else:
-                            return False  # Return to menu
-                    # Otherwise continue to second round (handled earlier in the code)
-                else:
-                    # Show checkpoint screen instead of well_done for all completed levels
-                    pygame.time.delay(500)  # Brief delay like in colors level
-                    checkpoint_waiting = True
-                    checkpoint_delay_frames = 60  # Wait ~1 second for animations
-                    
-                    if checkpoint_delay_frames <= 0 and len(explosions) <= 1 and len(lasers) <= 1 and not particles_converging:
-                        if not checkpoint_screen(mode):  # If checkpoint returns False (chose Menu)
-                            running = False  # Exit game loop to return to menu
-                        else:
-                            # If continue was pressed, proceed to the next level/group if available
-                            if current_group_index < len(groups):
-                                # Continue to the next group in the sequence
-                                game_started = True
-                            else:
-                                # If all groups completed, return to menu
-                                running = False
-                    else:
-                        checkpoint_delay_frames -= 1
-                
-                # Exit the loop immediately to prevent counter issues
-                break
-
-    # If the player completes the shapes level, mark it as completed
-    if mode == "shapes" and shapes_first_round_completed and not letters and not letters_to_spawn and letters_to_target == []:
-        try:
-            with open(LEVEL_PROGRESS_PATH, "w") as f:
-                f.write("shapes_completed")
-        except:
-            # If we can't write to the file, just continue
-            pass
-        
-        # Show checkpoint screen after completing shapes mode (both rounds)
-        pygame.time.delay(500)  # Brief delay
-        if checkpoint_screen(mode):  # If checkpoint returns True (chose Continue)
-            # Restart the shapes level, just like colors level
-            return True  # Signal to the main loop to restart the level
-        else:
-            running = False  # Exit game loop to return to menu
-            
-    # Original completion check
-    elif mode == "shapes" and just_completed_level:
-        try:
-            with open(LEVEL_PROGRESS_PATH, "w") as f:
-                f.write("shapes_completed")
-        except:
-            # If we can't write to the file, just continue
-            pass
-
-    # --- End of Main Game Loop ---
-    # Return True if we exited to go back to the menu (e.g., from checkpoint or well_done)
-    # Return False if we exited via ESC or Quit event
-    return True if running == False else False # A bit confusing, revise this return logic if needed
-
+    common_game_state = {
+        "score": 0, 
+        "overall_destroyed": 0,
+        "total_letters": 0, # Example
+        "current_group_index": 0,
+        "active_touches": active_touches, # Pass the reference to the global one
+        "explosions": explosions, # Pass reference
+        "lasers": lasers, # Pass reference
+        "glass_cracks": glass_cracks, # Pass reference
+        "background_shattered": background_shattered, # Pass reference
+        "game_over_triggered": game_over_triggered, # Pass reference
+        "player_data": { # Placeholder for player related state
+            "player_x": WIDTH // 2,
+            "player_y": HEIGHT // 2,
+        }
+        # ... other per-level state that might be reset ...
+    }
+
+    if mode in LEVEL_DISPATCHER:
+        level_runner = LEVEL_DISPATCHER[mode]
+        # The level runner is expected to be a function that takes (screen, game_globals, common_game_state)
+        # and contains its own game loop, returning a status (e.g., True to restart level, False to go to menu)
+        print(f"Dispatching to level: {mode}")
+        return level_runner(screen, game_globals, common_game_state) 
+    else:
+        print(f"Error: Unknown game mode '{mode}'")
+        # Fallback or error handling, e.g., return to menu
+        # return level_menu() # Or some other appropriate action
+        return False # Indicate an error / do not restart
+
+    # The original game_loop's extensive logic (if/elif for modes, the main while running loop)
+    # will be progressively removed from here and migrated into the respective level files/classes.
+    # For now, this function primarily acts as a dispatcher.
 
 def create_aoe(x, y, letters, target_letter):
     """Handles Area of Effect ability (placeholder/unused currently)."""
@@ -3406,14 +1619,77 @@ def game_over_screen():
 
 if __name__ == "__main__":
     welcome_screen()
+    current_mode = None 
     while True:
-        mode = level_menu()
-        if mode is None:
+        if not current_mode: 
+            current_mode = level_menu()
+        
+        if current_mode is None: 
+            print("Exiting via level menu.")
             break
         
-        # Run the game loop and check its return value
-        restart_level = game_loop(mode)
+        status = game_loop(current_mode) 
         
-        # If game_loop returns True, restart the level for shapes level or colors level
-        while restart_level and (mode == "shapes" or mode == "colors"):
-            restart_level = game_loop(mode)
+        print(f"Level '{current_mode}' returned status: {status}")
+
+        if status == "QUIT":
+            print("Quit status received. Exiting game.")
+            break
+        elif status == "LEVEL_MENU":
+            current_mode = None # Go back to level menu
+            continue
+        elif status == "WELL_DONE":
+            # Call the global well_done_screen if it exists and is appropriate here
+            # For now, just print and go back to menu
+            if 'well_done_screen' in game_globals_for_main_loop: # Requires game_globals to be accessible
+                 game_globals_for_main_loop['well_done_screen'](0) # Assuming score 0 or get it from somewhere
+            else:
+                 print("Well Done screen function not found in this context.")
+            print(f"Level '{current_mode}' completed (WELL_DONE). Returning to menu.")
+            current_mode = None
+            continue
+        elif status == "ERROR":
+            print(f"Level '{current_mode}' reported an error. Returning to menu.")
+            current_mode = None
+            continue
+        elif status == "CHECKPOINT_SHAPES":
+            print(f"Checkpoint for Shapes level. Showing checkpoint screen.")
+            # Assuming checkpoint_screen is globally accessible or part of a context
+            # And that it returns True to continue the level, False to go to menu.
+            if 'checkpoint_screen' in game_globals_for_main_loop:
+                if game_globals_for_main_loop['checkpoint_screen']("shapes"):
+                    # User chose to continue shapes level, current_mode remains "shapes"
+                    print("Continuing Shapes level after checkpoint.")
+                    # The ShapesLevel run method will call initialize_level() again.
+                    # No need to re-call game_loop(current_mode) immediately, 
+                    # the loop will continue with current_mode = "shapes"
+                else:
+                    print("User chose menu from shapes checkpoint.")
+                    current_mode = None # Go to level menu
+            else:
+                print("Checkpoint screen function not found. Returning to menu.")
+                current_mode = None
+            continue
+        elif status is False and (current_mode == "shapes" or current_mode == "colors"): # Legacy handling
+            print(f"Legacy restart for {current_mode}. This logic needs an update. Returning to menu.")
+            current_mode = None
+            continue
+        elif status is None:
+             print(f"Warning: Level '{current_mode}' returned None status. Returning to menu.")
+             current_mode = None
+             continue
+        else: # Unknown status or a boolean True that might have meant restart in old code
+            print(f"Unknown or unhandled status '{status}' from level '{current_mode}'. Returning to menu.")
+            current_mode = None
+            continue
+
+    print("Game exited.")
+    pygame.quit()
+
+# It would be better if game_globals were properly scoped or passed to where __main__ can use it.
+# For now, this is a conceptual placeholder for accessing functions like well_done_screen/checkpoint_screen.
+# A proper game manager class would handle this more cleanly.
+game_globals_for_main_loop = {
+    "well_done_screen": well_done_screen, 
+    "checkpoint_screen": checkpoint_screen
+} if 'well_done_screen' in globals() and 'checkpoint_screen' in globals() else {}

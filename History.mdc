@@ -345,3 +345,12 @@ This enhancement improves gameplay by:
   * Users now have a reliable way to exit the application from any point in the game
   * Removed unexpected level reset behavior that was causing frustration
   * Maintained all visual enhancements while providing more intuitive controls
+
+## 2024-07-16
+
+- **Task:** Restructure game levels into separate files.
+  - **Reason:** Optimize game rendering and reduce lag, especially on Qboard.
+  - **Details:** Separate levels (ABC, 123, shapes, etc.) into their own files within the `levels/` directory.
+  - **Status:** Started.
+
+*   Project restructuring initiated.

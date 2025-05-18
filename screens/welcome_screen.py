@@ -127,20 +127,33 @@ class WelcomeScreen:
         title_text = "Super Student"
         title_rect_center = (self.width // 2, self.height // 2 - self.title_offset)
         
+        # Ensure self.title_color is not None before using its components
+        if self.title_color is None:
+            # Fallback or default color if not yet initialized
+            # This might happen if draw is called before update has run at least once
+            # Or, ideally, ensure update() is called before draw() in the main loop
+            # For now, a safe fallback:
+            current_r, current_g, current_b = 255, 255, 255 # Default to white
+        else:
+            current_r, current_g, current_b = self.title_color
+
         # Glowing title effect
-        highlight_color = (min(self.title_color[0]+80, 255), min(self.title_color[1]+80, 255), min(self.title_color[2]+80, 255))
-        shadow_color = (max(self.title_color[0]-90, 0), max(self.title_color[1]-90, 0), max(self.title_color[2]-90, 0))
-        mid_color = (max(self.title_color[0]-40, 0), max(self.title_color[1]-40, 0), max(self.title_color[2]-40, 0))
+        highlight_color = (min(current_r+80, 255), min(current_g+80, 255), min(current_b+80, 255))
+        shadow_color = (max(current_r-90, 0), max(current_g-90, 0), max(current_b-90, 0))
+        mid_color = (max(current_r-40, 0), max(current_g-40, 0), max(current_b-40, 0))
         
         # Draw shadow layers
         shadow = self.title_font.render(title_text, True, (20, 20, 20))
         shadow_rect = shadow.get_rect(center=(title_rect_center[0] + 1, title_rect_center[1] + 1))
         screen.blit(shadow, shadow_rect)
         
-        # Draw glowing layers
-        glow_colors = [(r//2, g//2, b//2), (r//3, g//3, b//3)]
-        for i, glow_color in enumerate(glow_colors):
-            glow = self.title_font.render(title_text, True, glow_color)
+        # Draw glowing layers using components from self.title_color
+        glow_r1, glow_g1, glow_b1 = current_r // 2, current_g // 2, current_b // 2
+        glow_r2, glow_g2, glow_b2 = current_r // 3, current_g // 3, current_b // 3
+        glow_colors = [(glow_r1, glow_g1, glow_b1), (glow_r2, glow_g2, glow_b2)]
+
+        for i, glow_color_val in enumerate(glow_colors):
+            glow = self.title_font.render(title_text, True, glow_color_val)
             offset = i + 1
             for dx, dy in [(-offset,0), (offset,0), (0,-offset), (0,offset)]:
                 glow_rect = glow.get_rect(center=(title_rect_center[0] + dx, title_rect_center[1] + dy))
