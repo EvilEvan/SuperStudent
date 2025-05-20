@@ -24,6 +24,8 @@ from levels import numbers_level
 from levels import shapes_level
 from levels import clcase_level
 from levels import colors_level # This might be an issue if main.py also imports it.
+from levels import abc_level
+from levels import cl_case_letters
 
 from settings import (
     COLORS_COLLISION_DELAY, DISPLAY_MODES, DEFAULT_MODE, DISPLAY_SETTINGS_PATH,
@@ -704,10 +706,10 @@ def level_menu():
 
 # Map mode strings to level module functions (will be updated to classes later)
 LEVEL_DISPATCHER = {
-    "alphabet": alphabet_level.start_alphabet_level_instance,
+    "alphabet": abc_level.start_alphabet_level_instance,
     "numbers": numbers_level.start_numbers_level_instance,
     "shapes": shapes_level.start_shapes_level_instance,
-    "clcase": clcase_level.start_clcase_level_instance,
+    "clcase": cl_case_letters.start_clcase_level_instance,
     "colors": colors_level.start_colors_level_instance, # Updated
 }
 

@@ -23,20 +23,24 @@ from screens.welcome_screen import WelcomeScreen
 # from screens.well_done_screen import WellDoneScreen
 
 # Import levels
-# from levels.alphabet_level import AlphabetLevel
+# from levels.abc_level import AlphabetLevel
 # from levels.numbers_level import NumbersLevel
-# from levels.shapes_level import ShapesLevel
-# from levels.clcase_level import CLCaseLevel
+from levels.shapes_level import ShapesLevel
 from levels.colors_level import ColorsLevel
 
 # Import settings
 from settings import FPS, DISPLAY_MODES, DEBUG_MODE, SHOW_FPS
 
+# Import new modular components
+from game_setup import screen, WIDTH, HEIGHT, DISPLAY_MODE, resource_manager
+from game_logic import game_loop
+from engine.engine import run
+
 class GameState(Enum):
     """Enum representing different game states."""
     WELCOME = auto()
     LEVEL_MENU = auto()
-    ALPHABET_LEVEL = auto()
+    ABC_LEVEL = auto()
     NUMBERS_LEVEL = auto()
     SHAPES_LEVEL = auto()
     CLCASE_LEVEL = auto()
@@ -51,18 +55,7 @@ class Game:
     """Main game class managing the game state and main loop."""
     
     def __init__(self):
-        """Initialize pygame and game systems."""
-        # Initialize pygame
-        pygame.init()
-        
-        # Get information about the display
-        info = pygame.display.Info()
-        self.WIDTH, self.HEIGHT = info.current_w, info.current_h
-        
-        # Set up display
-        self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT), pygame.FULLSCREEN)
-        pygame.display.set_caption("SuperStudent")
-        
+        """Initialize game systems."""
         # Set up clock for timing
         self.clock = pygame.time.Clock()
         self.FPS = FPS
@@ -73,11 +66,11 @@ class Game:
         self.running = True
         
         # Initialize utility systems
-        self.resource_manager = ResourceManager()
+        self.resource_manager = resource_manager
         
         # Initialize particle system and effects (these will be properly sized after welcome screen)
-        self.particle_system = ParticleSystem(self.WIDTH, self.HEIGHT)
-        self.effects = Effects(self.WIDTH, self.HEIGHT)
+        self.particle_system = ParticleSystem(WIDTH, HEIGHT)
+        self.effects = Effects(WIDTH, HEIGHT)
         
         # Initialize screens and levels
         self.current_screen = None
@@ -85,7 +78,7 @@ class Game:
         self.levels = {}
         
         # Initialize the screens that are used right away
-        self.screens[GameState.WELCOME] = WelcomeScreen(self.WIDTH, self.HEIGHT, self.resource_manager)
+        self.screens[GameState.WELCOME] = WelcomeScreen(WIDTH, HEIGHT, self.resource_manager)
         # Other screens will be initialized on demand
         
         # Levels will be initialized on demand as they are selected
@@ -142,7 +135,7 @@ class Game:
             # Initialize level menu if needed
             if GameState.LEVEL_MENU not in self.screens:
                 from screens.level_menu import LevelMenu
-                self.screens[GameState.LEVEL_MENU] = LevelMenu(self.WIDTH, self.HEIGHT, self.resource_manager)
+                self.screens[GameState.LEVEL_MENU] = LevelMenu(WIDTH, HEIGHT, self.resource_manager)
                 self.screens[GameState.LEVEL_MENU].initialize()
             self.current_screen = self.screens[GameState.LEVEL_MENU]
             
@@ -150,7 +143,7 @@ class Game:
             # Initialize colors level if needed
             if GameState.COLORS_LEVEL not in self.levels:
                 self.levels[GameState.COLORS_LEVEL] = ColorsLevel(
-                    self.WIDTH, self.HEIGHT, 
+                    WIDTH, HEIGHT, 
                     self.resource_manager, 
                     self.particle_system, 
                     self.effects
@@ -158,6 +151,19 @@ class Game:
             # Always re-initialize the level when entering it
             self.levels[GameState.COLORS_LEVEL].initialize()
             self.current_screen = self.levels[GameState.COLORS_LEVEL]
+            
+        elif self.current_state == GameState.SHAPES_LEVEL:
+            # Initialize shapes level if needed
+            if GameState.SHAPES_LEVEL not in self.levels:
+                self.levels[GameState.SHAPES_LEVEL] = ShapesLevel(
+                    WIDTH, HEIGHT,
+                    self.resource_manager,
+                    self.particle_system,
+                    self.effects
+                )
+            # Always re-initialize the level when entering it
+            self.levels[GameState.SHAPES_LEVEL].initialize()
+            self.current_screen = self.levels[GameState.SHAPES_LEVEL]
             
         # Handle other states as they are implemented
         else:
@@ -174,16 +180,16 @@ class Game:
     
     def _draw(self):
         """Draw the current screen or level."""
-        self.screen.fill((0, 0, 0))  # Clear screen
+        screen.fill((0, 0, 0))  # Clear screen
         
         # Draw the current screen
-        self.current_screen.draw(self.screen)
+        self.current_screen.draw(screen)
         
         # Show FPS if in debug mode
         if DEBUG_MODE and SHOW_FPS:
             fps_text = f"FPS: {int(self.clock.get_fps())}"
             fps_surf = pygame.font.Font(None, 24).render(fps_text, True, (255, 255, 255))
-            self.screen.blit(fps_surf, (10, 10))
+            screen.blit(fps_surf, (10, 10))
         
         pygame.display.flip()
     
@@ -198,76 +204,14 @@ class Game:
     
     def _change_state(self, new_state):
         """
-        Change to a new game state.
+        Change the current game state.
         
         Args:
-            new_state: String or GameState indicating the new state
+            new_state: The new game state to change to
         """
-        # Handle conversion from string to enum if needed
-        if isinstance(new_state, str):
-            try:
-                new_state = GameState[new_state]
-            except KeyError:
-                print(f"Warning: Invalid game state '{new_state}'")
-                return
-        
-        # Skip if already in this state
-        if new_state == self.current_state:
-            return
-            
-        previous_state = self.current_state
-        
-        # Clean up the current screen and its resources
-        if self.current_screen:
-            print(f"Game: Cleaning up resources for {previous_state}")
-            self.current_screen.cleanup()
-            
-            # Additional resource cleanup for levels that may not handle it properly
-            if previous_state in [
-                GameState.ALPHABET_LEVEL, 
-                GameState.NUMBERS_LEVEL, 
-                GameState.SHAPES_LEVEL, 
-                GameState.CLCASE_LEVEL, 
-                GameState.COLORS_LEVEL
-            ]:
-                # Ensure level resources are unloaded
-                if previous_state == GameState.ALPHABET_LEVEL:
-                    self.resource_manager.unload_level_resources("ALPHABET_LEVEL")
-                elif previous_state == GameState.NUMBERS_LEVEL:
-                    self.resource_manager.unload_level_resources("NUMBERS_LEVEL")
-                elif previous_state == GameState.SHAPES_LEVEL:
-                    self.resource_manager.unload_level_resources("SHAPES_LEVEL")
-                elif previous_state == GameState.CLCASE_LEVEL:
-                    self.resource_manager.unload_level_resources("CLCASE_LEVEL")
-                elif previous_state == GameState.COLORS_LEVEL:
-                    self.resource_manager.unload_level_resources("COLORS_LEVEL")
-                    
-            # Force garbage collection to free up memory
-            import gc
-            gc.collect()
-        
-        # Handle special case for QUIT
-        if new_state == GameState.QUIT:
-            self.running = False
-            return
-        
-        # Change to the new state
         self.current_state = new_state
-        print(f"Game: Changing state from {previous_state} to {new_state}")
-        
-        # In debug mode, log memory usage before initializing new state
-        if DEBUG_MODE:
-            print(f"Game: Resource stats before initializing {new_state}: {self.resource_manager.get_resource_stats()}")
-        
-        # Initialize the new screen or level
         self._initialize_current()
-        
-        # In debug mode, log memory usage after initialization
-        if DEBUG_MODE:
-            print(f"Game: Resource stats after initializing {new_state}: {self.resource_manager.get_resource_stats()}")
-
 
 if __name__ == "__main__":
-    # Create and run the game
-    game = Game()
-    game.run() 
+    pygame.init()
+    run() 

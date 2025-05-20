@@ -40,6 +40,7 @@ DISPERSE_FRAMES = 30
 CHECKPOINT_TRIGGER = 10  # Show checkpoint screen every 10 targets in Colors level
 SHAKE_DURATION_MISCLICK = 5
 SHAKE_MAGNITUDE_MISCLICK = 3
+CRACK_DURATION = 60 # Duration for individual cracks and screen shatter effect in frames
 
 # Game constants
 MAX_CRACKS = 15  # Number of cracks needed to shatter screen

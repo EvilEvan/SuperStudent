@@ -1,0 +1,168 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Project Seperation blueprint.mdc
+
+
+Below is an architect-level review of the 2 960-line `SuperStudent.py` monolith and a concrete decomposition plan.  Nothing here changes how the game behaves today; it only shows where every current function/class should live so that future fixes or additions are painless.
+
+────────────────────────────────────────────────────────
+1.  BIG PICTURE
+────────────────────────────────────────────────────────
+• Everything in `SuperStudent.py` already falls into four natural layers:
+
+    ┌─ ENGINE  (game loop, clock, routing, global pygame init)
+    │
+    ├─ SCREENS (static, UI-only: Welcome, LevelSelect, Checkpoint,
+    │           GameOver, "Well-Done", Screen-Break)
+    │
+    ├─ LEVELS  (interactive content that can be failed/won:
+    │           Alphabet, Numbers, Shapes, Colours)
+    │
+    └─ SYSTEMS (re-usable services: Particles, Explosions, GlassCrack,
+                Multi-Touch support, HUD, ResourceManager, Settings)
+
+Most bugs stem from the fact that these layers are mixed together, share global
+state and are hard-to-reuse.  Untangling them into files that mirror the four
+layers is the single biggest quality win.
+
+────────────────────────────────────────────────────────
+2.  RECOMMENDED FILE / FOLDER LAYOUT
+────────────────────────────────────────────────────────
+super_student/
+│
+├─ main.py                 ← 3-line stub: pygame.init(), import Engine, run()
+│
+├─ engine/                 ← "runtime glue"
+│   ├─ __init__.py
+│   ├─ engine.py           ← master loop, screen-stack, FPS cap
+│   ├─ router.py           ← push/pop screens, pass events
+│   └─ input.py            ← wraps pygame.FINGER* + MOUSE* into a
+│                            unified "PointerEvent"
+│
+├─ screens/                ← zero-game-logic UI
+│   ├─ __init__.py
+│   ├─ welcome.py
+│   ├─ level_select.py
+│   ├─ checkpoint.py
+│   ├─ game_over.py
+│   └─ screen_break.py
+│
+├─ levels/                 ← real gameplay; each inherits BaseLevel
+│   ├─ __init__.py
+│   ├─ abc_level.py
+│   ├─ numbers_level.py
+│   ├─ shapes_level.py
+│   └─ colors_level.py
+│
+├─ systems/                ← reusable, stateless or "service" modules
+│   ├─ __init__.py
+│   ├─ particle.py         ← pooled particles
+│   ├─ explosion.py        ← create_explosion(), draw_explosion()
+│   ├─ glass_crack.py      ← create_crack(), draw_cracks()
+│   ├─ hud.py              ← display_info(), fonts cache
+│   ├─ multitouch.py       ← active_touches dict + helper
+│   └─ resource_manager.py ← already exists, keep / expand
+│
+├─ settings/               ← static data only
+│   ├─ __init__.py         ← exports constants (COLORS, MAX_PARTICLES…)
+│   └─ display.py          ← DEFAULT_MODE, detect_display_type()
+│
+└─ assets/                 ← fonts / sounds / images (unchanged)
+
+Naming matches the list you provided:
+ Welcome Display  → screens/welcome.py
+ Level selection  → screens/level_select.py
+ ABC, 123, Shapes, C/L Case, Colors → levels/*.py
+ Checkpoints      → screens/checkpoint.py
+ Game-over        → screens/game_over.py
+ GlassShatter     → systems/glass_crack.py
+ Multi-touch      → systems/multitouch.py
+ Particles        → systems/particle.py
+ Explosions       → systems/explosion.py
+ HUD              → systems/hud.py
+
+Extra NEW modules that pay off quickly
+• engine/router.py – removes all global "running" flags; any Screen or Level
+  can simply return "push(new_screen)" / "pop()".
+• engine/input.py – converts raw pygame events into your own dataclass
+  (pointer id, pos, is_down, is_move) so the rest of the code never touches
+  pygame directly.
+
+────────────────────────────────────────────────────────
+3.  CODE-MOVING CHECKLIST
+────────────────────────────────────────────────────────
+A.  Strip all pygame.init()/set_allowed()/set_mode() into `engine/engine.py`.
+    After that, every other module receives the already-created `screen`
+    surface via dependency injection.
+
+B.  Replace GLOBALS with attributes inside the object that owns them:
+
+    •  explosions, lasers        → systems/explosion.ExplosionManager
+    •  glass_cracks, shattered   → systems/glass_crack.GlassCrackManager
+    •  shake_duration etc.       → engine.ScreenStack handles camera shake
+    •  active_touches            → systems/multitouch.TouchManager
+
+C.  Turn each *screen* function (`welcome_screen`, `level_menu`, …)
+    into a subclass of `engine.router.Screen` with these methods:
+
+        def handle_event(self, e: PointerEvent): …
+        def update(self, dt: float): …
+        def draw(self, surface): …
+        def next_screen(self) -> Screen | None: …
+
+   The engine stack drives them; no while-loops inside screens anymore.
+
+D.  Turn each *level* into a subclass of `levels.base_level.BaseLevel`
+    that exposes exactly the same four methods.  All per-level state
+    lives in `self`.
+
+E.  Systems become singletons or plain modules with stateless helpers.
+   (e.g. `particle.ParticlePool` gets created in Engine and passed to levels).
+
+────────────────────────────────────────────────────────
+4.  WHY THIS IS ENOUGH (DON'T ADD MORE FILES YET)
+────────────────────────────────────────────────────────
+• We keep the already-working ResourceManager, font caching, settings.py.
+• We do NOT yet need separate "Animations", "Sound", "AI" modules; the game
+  has none.  Avoid premature splits.
+• By having max ~16 files above, each under 200 LOC, every bug is now inside
+  a < 10-second scroll window and has a single owner.
+
+────────────────────────────────────────────────────────
+5.  MIGRATION ORDER (so the game never breaks)
+────────────────────────────────────────────────────────
+1.  Move Particles + Explosions first (independent, easy to unit-test).
+2.  Create `engine/engine.py` and run the current monolith through it
+    (just import old `SuperStudent` for now) – proves the new loop works.
+3.  Cut `welcome_screen()` out to `screens/welcome.py`, register with Router.
+4.  Repeat for `level_menu()` and `screens/level_select.py`.
+5.  Migrate Levels one-by-one (Alphabet → Numbers → Shapes → Colors).
+6.  Delete unused globals, confirm Pylint shows zero "global-variable" warns.
+7.  Finally rename old `SuperStudent.py` to `legacy_monolith.py`
+    and verify nothing imports it.
+
+────────────────────────────────────────────────────────
+6.  LOG ENTRY
+────────────────────────────────────────────────────────
+Per company rule "Always make log entery in history..mdc" add:
+
+```
+## 2024-06-10  Restructure plan drafted
+-  Identified 4-layer architecture (Engine, Screens, Levels, Systems)
+-  Proposed 16 target modules, no behaviour change
+-  Next action: extract particle & explosion managers
+```
+
+────────────────────────────────────────────────────────
+7.  NEXT ACTIONS FOR YOU
+────────────────────────────────────────────────────────
+1. Create folder skeleton from section 2 (empty .py files + __init__.py).
+2. Copy Particle/Explosion code into `systems/`, adjust imports, run tests.
+3. Ping me once that compiles; we will move the first Screen together and
+   fine-tune any interface details.
+
+That's all that's needed to make Super Student maintainable without
+over-engineering.

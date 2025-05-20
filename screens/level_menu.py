@@ -227,7 +227,7 @@ class LevelMenu:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = pygame.mouse.get_pos()
             if self.abc_rect.collidepoint(mx, my):
-                return "ALPHABET_LEVEL"
+                return "ABC_LEVEL"
             elif self.num_rect.collidepoint(mx, my):
                 return "NUMBERS_LEVEL"
             elif self.shapes_rect.collidepoint(mx, my):
